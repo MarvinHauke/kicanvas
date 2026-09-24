@@ -346,6 +346,7 @@ class KiCanvasEmbedElement extends KCUIElement {
                 controls="${this.controls}"
                 controlslist="${this.controlslist}">
             </kc-schematic-app>` as KCSchematicAppElement;
+            this.#schematic_app.groups = this.#groups;
         }
 
         if (this.#project.has_boards && !this.#board_app) {

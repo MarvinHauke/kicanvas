@@ -9,6 +9,7 @@ import { KCViewerAppElement } from "../common/app";
 import { KCSchematicViewerElement } from "./viewer";
 
 // Import dependent elements so they're registered before use.
+import "./groups-panel";
 import "./info-panel";
 import "./properties-panel";
 import "./symbols-panel";
@@ -16,6 +17,8 @@ import "./viewer";
 import type { ProjectPage } from "../../project";
 import { KicadSch } from "../../../kicad";
 import { SchematicSheet } from "../../../kicad/schematic";
+import type { SymbolGroupSet } from "../../groups";
+import type { KCSchematicGroupsPanelElement } from "./groups-panel";
 
 /**
  * Internal "parent" element for KiCanvas's schematic viewer. Handles
@@ -23,6 +26,12 @@ import { SchematicSheet } from "../../../kicad/schematic";
  * basically KiCanvas's version of EESchema.
  */
 export class KCSchematicAppElement extends KCViewerAppElement<KCSchematicViewerElement> {
+    /**
+     * Symbol groups to list in the Subcircuits panel, set before the app is
+     * rendered. The panel is only shown if there are groups.
+     */
+    groups: SymbolGroupSet | null = null;
+
     override on_viewer_select(item?: unknown, previous?: unknown) {
         // Only handle double-selecting/double-clicking on items.
         if (!item || item != previous) {
@@ -51,7 +60,25 @@ export class KCSchematicAppElement extends KCViewerAppElement<KCSchematicViewerE
     }
 
     override make_activities() {
+        const groups_activity = [];
+
+        if (this.groups?.groups.length) {
+            const panel =
+                html`<kc-schematic-groups-panel></kc-schematic-groups-panel>` as KCSchematicGroupsPanelElement;
+            panel.groups = this.groups;
+            groups_activity.push(
+                html`<kc-ui-activity
+                    slot="activities"
+                    name="Subcircuits"
+                    icon="account_tree">
+                    ${panel}
+                </kc-ui-activity>`,
+            );
+        }
+
         return [
+            ...groups_activity,
+
             // Symbols
             html`<kc-ui-activity
                 slot="activities"

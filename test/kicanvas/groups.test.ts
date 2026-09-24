@@ -134,6 +134,26 @@ suite("kicanvas.groups", function () {
         assert.isUndefined(set.selected, "unknown selection dropped");
     });
 
+    test("breaks parent cycles", function () {
+        const set = SymbolGroupSet.parse({
+            version: 1,
+            groups: [
+                { id: "a", refs: ["R1"], parent: "b" },
+                { id: "b", refs: ["R2"], parent: "a" },
+                { id: "c", refs: ["R3"], parent: "c" },
+            ],
+        });
+
+        // Every group is reachable from the top level.
+        const reachable = new Set<string>();
+        const walk = (id: string) => {
+            reachable.add(id);
+            set.children(id).forEach((g) => walk(g.id));
+        };
+        set.top_level.forEach((g) => walk(g.id));
+        assert.deepEqual([...reachable].sort(), ["a", "b", "c"]);
+    });
+
     test("rejects invalid documents", function () {
         assert.throws(() => SymbolGroupSet.parse("[]"));
         assert.throws(() => SymbolGroupSet.parse("{}"));

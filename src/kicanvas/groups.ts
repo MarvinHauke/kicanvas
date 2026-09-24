@@ -126,6 +126,24 @@ export class SymbolGroupSet extends EventTarget {
             }
         }
 
+        // Break parent cycles, otherwise the groups in a cycle would never
+        // be reachable from the top level.
+        for (const group of set.groups) {
+            const seen = new Set([group.id]);
+            let parent = group.parent;
+            while (parent !== undefined) {
+                if (seen.has(parent)) {
+                    log.warn(
+                        `Symbol group "${group.id}" is its own ancestor, parent removed`,
+                    );
+                    group.parent = undefined;
+                    break;
+                }
+                seen.add(parent);
+                parent = set.#by_id.get(parent)?.parent;
+            }
+        }
+
         set.select(selected);
 
         if (is_object(data["parts"])) {

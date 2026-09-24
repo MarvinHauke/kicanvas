@@ -1,0 +1,40 @@
+<!doctype html>
+<html>
+    <head>
+        <link rel="stylesheet" href="./embedded-style.css" />
+    </head>
+
+    <body>
+        <main>
+            <p>Symbol groups, inline JSON (reused sheet example).</p>
+            <kicanvas-embed id="hier" controls="full">
+                <kicanvas-source src="examples/hier/root.kicad_sch">
+                </kicanvas-source>
+                <kicanvas-source src="examples/hier/amp.kicad_sch">
+                </kicanvas-source>
+                <!-- prettier-ignore -->
+                <kicanvas-groups>
+                    {
+                        "version": 1,
+                        "title": "hier",
+                        "source": "analysis",
+                        "selected": "amp#2",
+                        "groups": [
+                            {"id": "amp#1", "refs": ["R1", "U1.A"], "kind": "amp",
+                             "description": "R1 &amp; U1.A &lt;left&gt;"},
+                            {"id": "amp#2", "refs": ["R11", "U11.B"], "kind": "amp",
+                             "status": "ambiguous"},
+                            {"id": "unit#1", "refs": ["U1.B"], "kind": "unit",
+                             "parent": "amp#1"},
+                            {"id": "spread#1", "refs": ["R100", "R1", "R999"],
+                             "kind": "spread"}
+                        ],
+                        "parts": {"R1": {"kind": "resistor", "value": "10k"}}
+                    }
+                </kicanvas-groups>
+            </kicanvas-embed>
+        </main>
+    </body>
+
+    <script type="module" src="./kicanvas/kicanvas.js"></script>
+</html>

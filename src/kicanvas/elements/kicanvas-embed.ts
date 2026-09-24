@@ -17,6 +17,7 @@ import {
 import { KCUIElement } from "../../kc-ui";
 import kc_ui_styles from "../../kc-ui/kc-ui.css";
 import type { HighlightGroup } from "../../viewers/base/highlights";
+import { SymbolGroupSet } from "../groups";
 import { group_color, parse_flag } from "../highlights";
 import { Project } from "../project";
 import { parse_refs, resolve_refs } from "../refs";
@@ -71,9 +72,19 @@ class KiCanvasEmbedElement extends KCUIElement {
     constructor() {
         super();
         this.provideContext("project", this.#project);
+        this.provideLazyContext("groups", () => this.#groups);
     }
 
     #project: Project = new Project();
+    #groups: SymbolGroupSet | null = null;
+
+    /**
+     * Symbol groups loaded from a kicanvas-groups child, or null.
+     */
+    get groups(): SymbolGroupSet | null {
+        return this.#groups;
+    }
+
     @attribute({ type: String })
     src: string | null;
 
@@ -170,6 +181,8 @@ class KiCanvasEmbedElement extends KCUIElement {
             await vfs.setup();
             await this.#project.load(vfs);
 
+            this.#groups = await this.#load_groups();
+            this.#groups?.resolve(this.#project);
 
             this.loaded = true;
             await this.update();
@@ -181,6 +194,47 @@ class KiCanvasEmbedElement extends KCUIElement {
             this.#project.set_active_page(this.#project.root_schematic_page!);
         } finally {
             this.loading = false;
+        }
+    }
+
+    /**
+     * Loads symbol groups from the first kicanvas-groups child, either from
+     * its src URL or from JSON inside the element.
+     */
+    async #load_groups(): Promise<SymbolGroupSet | null> {
+        const elms =
+            this.querySelectorAll<KiCanvasGroupsElement>("kicanvas-groups");
+        const elm = elms[0];
+
+        if (!elm) {
+            return null;
+        }
+
+        if (elms.length > 1) {
+            log.warn("Only the first kicanvas-groups element is used");
+        }
+
+        try {
+            let json: string;
+            if (elm.src) {
+                const url = new URL(elm.src, document.baseURI);
+                const response = await fetch(url);
+                if (!response.ok) {
+                    throw new Error(
+                        `${response.status} ${response.statusText}`,
+                    );
+                }
+                json = await response.text();
+            } else {
+                json = elm.textContent ?? "";
+            }
+
+            const groups = SymbolGroupSet.parse(json);
+            log.info(`Loaded ${groups.groups.length} symbol groups`);
+            return groups;
+        } catch (e) {
+            log.error(`Unable to load symbol groups: ${e}`);
+            return null;
         }
     }
 
@@ -404,6 +458,27 @@ class KiCanvasHighlightElement extends CustomElement {
 }
 
 window.customElements.define("kicanvas-highlight", KiCanvasHighlightElement);
+
+/**
+ * kicanvas-groups tag, provides symbol groups (see groups.ts for the
+ * format) either as JSON inside the element or from a URL:
+ *
+ * <kicanvas-groups src="review.json"></kicanvas-groups>
+ * <kicanvas-groups>{"version": 1, "groups": [...]}</kicanvas-groups>
+ */
+class KiCanvasGroupsElement extends CustomElement {
+    override connectedCallback() {
+        this.ariaHidden = "true";
+        this.hidden = true;
+        this.style.display = "none";
+        super.connectedCallback();
+    }
+
+    @attribute({ type: String })
+    src: string | null;
+}
+
+window.customElements.define("kicanvas-groups", KiCanvasGroupsElement);
 
 /* Import required fonts.
  * TODO: Package these up as part of KiCanvas

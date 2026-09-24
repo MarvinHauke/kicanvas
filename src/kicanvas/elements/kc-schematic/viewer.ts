@@ -5,6 +5,7 @@
 */
 
 import { SchematicViewer } from "../../../viewers/schematic/viewer";
+import type { ProjectPage } from "../../project";
 import { KCViewerElement } from "../common/viewer";
 
 export class KCSchematicViewerElement extends KCViewerElement<SchematicViewer> {
@@ -18,6 +19,13 @@ export class KCSchematicViewerElement extends KCViewerElement<SchematicViewer> {
             !this.disableinteraction,
             this.themeObject.schematic,
         );
+    }
+
+    override async load(src: ProjectPage) {
+        this.loaded = false;
+        // Pass the page rather than its document, so that the viewer can
+        // apply the references and units of this sheet instance.
+        await this.viewer.load(src);
     }
 }
 

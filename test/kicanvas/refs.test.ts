@@ -117,4 +117,15 @@ suite("kicanvas.refs", function () {
         assert.deepEqual(result.missing, ["R999"]);
         assert.deepEqual(summarize(result), { [LEFT]: ["001", "002"] });
     });
+
+    test("overlapping and repeated references are found", async function () {
+        const project = await load_project();
+
+        const result = resolve_refs(project, "U1 U1.A R1 R1");
+        assert.deepEqual(result.missing, []);
+        // Each symbol is listed once.
+        assert.deepEqual(summarize(result), {
+            [LEFT]: ["001", "002", "003"],
+        });
+    });
 });

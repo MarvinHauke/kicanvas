@@ -167,11 +167,16 @@ export class SymbolGroupSet extends EventTarget {
             const seen = new Set([group.id]);
             let parent = group.parent;
             while (parent !== undefined) {
-                if (seen.has(parent)) {
+                if (parent == group.id) {
                     log.warn(
                         `Symbol group "${group.id}" is its own ancestor, parent removed`,
                     );
                     group.parent = undefined;
+                    break;
+                }
+                // The chain leads into a cycle this group isn't part of,
+                // which is broken when a group in it is checked.
+                if (seen.has(parent)) {
                     break;
                 }
                 seen.add(parent);

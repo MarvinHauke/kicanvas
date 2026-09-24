@@ -146,8 +146,14 @@ suite("kicanvas.groups", function () {
                 { id: "a", refs: ["R1"], parent: "b" },
                 { id: "b", refs: ["R2"], parent: "a" },
                 { id: "c", refs: ["R3"], parent: "c" },
+                // d leads into the cycle e -> f -> e but isn't part of it.
+                { id: "d", refs: ["R4"], parent: "e" },
+                { id: "e", refs: ["R5"], parent: "f" },
+                { id: "f", refs: ["R6"], parent: "e" },
             ],
         });
+
+        assert.equal(set.by_id("d")!.parent, "e");
 
         // Every group is reachable from the top level.
         const reachable = new Set<string>();
@@ -156,7 +162,7 @@ suite("kicanvas.groups", function () {
             set.children(id).forEach((g) => walk(g.id));
         };
         set.top_level.forEach((g) => walk(g.id));
-        assert.deepEqual([...reachable].sort(), ["a", "b", "c"]);
+        assert.deepEqual([...reachable].sort(), ["a", "b", "c", "d", "e", "f"]);
     });
 
     test("rejects invalid documents", function () {

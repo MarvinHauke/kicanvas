@@ -334,9 +334,8 @@ class KiCanvasEmbedElement extends KCUIElement {
             label: group.missing.length
                 ? `${group.label} (incomplete)`
                 : group.label,
-            color: group.color
-                ? Color.from_css(group.color)
-                : group_color(group.kind ?? group.id),
+            color:
+                group_css_color(group) ?? group_color(group.kind ?? group.id),
             ambiguous: group.status == "ambiguous",
             pages: group.pages.map(({ page, symbols }) => ({
                 path: page.project_path,
@@ -493,6 +492,24 @@ class KiCanvasSourceElement extends CustomElement {
 }
 
 window.customElements.define("kicanvas-source", KiCanvasSourceElement);
+
+/**
+ * The color given by a group's color field. Color.from_css() only reads
+ * hex and rgb() colors, so other CSS colors fall back to the group color.
+ */
+function group_css_color(group: SymbolGroup): Color | undefined {
+    if (!group.color) {
+        return undefined;
+    }
+    try {
+        return Color.from_css(group.color);
+    } catch {
+        log.warn(
+            `Symbol group "${group.id}": unsupported color "${group.color}", use #hex or rgb()`,
+        );
+        return undefined;
+    }
+}
 
 /**
  * kicanvas-highlight tag, a symbol group given by attributes, for pages

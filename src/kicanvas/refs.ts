@@ -123,12 +123,13 @@ export function resolve_refs(
             const reference = instance?.reference ?? symbol.reference;
             const unit = instance?.unit ?? symbol.unit;
 
-            for (const query of queries) {
-                if (ref_matches(query, reference, unit)) {
-                    symbols.push(symbol);
-                    found.add(query);
-                    break;
-                }
+            // Several queries can name the same symbol, e.g. "U1" and "U1.A".
+            const matching = queries.filter((q) =>
+                ref_matches(q, reference, unit),
+            );
+            if (matching.length) {
+                symbols.push(symbol);
+                matching.forEach((q) => found.add(q));
             }
         }
 

@@ -6,7 +6,12 @@
 
 import { assert } from "chai";
 
-import { SymbolGroupSet, step_id } from "../../src/kicanvas/groups";
+import {
+    SymbolGroupSet,
+    precision,
+    recall,
+    step_id,
+} from "../../src/kicanvas/groups";
 import { Project } from "../../src/kicanvas/project";
 import { parse_refs } from "../../src/kicanvas/refs";
 import { LocalFileSystem } from "../../src/kicanvas/services/vfs";
@@ -431,7 +436,54 @@ suite("kicanvas.groups", function () {
             refs: ["R5", "U3.A"],
             kind: "buffer",
             review: "correct",
+            added: true,
         });
+    });
+
+    test("evaluate", function () {
+        const set = SymbolGroupSet.parse({
+            version: 1,
+            groups: [
+                { id: "a1", refs: ["R1"], kind: "amp", review: "correct" },
+                { id: "a2", refs: ["R2"], kind: "amp", review: "wrong" },
+                { id: "a3", refs: ["R3"], kind: "amp" },
+                // nested groups are covered by their parent
+                {
+                    id: "d1",
+                    refs: ["R4"],
+                    kind: "div",
+                    parent: "a1",
+                    review: "wrong",
+                },
+                { id: "d2", refs: ["R5"], kind: "div", review: "correct" },
+                // added in an earlier review: missed
+                {
+                    id: "g1",
+                    refs: ["R6"],
+                    kind: "div",
+                    review: "correct",
+                    added: true,
+                },
+                { id: "g2", refs: ["R7"], review: "wrong", added: true },
+            ],
+        });
+        set.create_group([{ text: "R8", ref: "R8" }], "amp");
+
+        const rows = set.evaluate();
+        assert.deepEqual(rows, [
+            { kind: "amp", tp: 1, fp: 1, fn: 1, open: 1 },
+            { kind: "div", tp: 1, fp: 0, fn: 1, open: 0 },
+            { tp: 2, fp: 1, fn: 2, open: 1 },
+        ]);
+        assert.equal(precision(rows[0]!), 0.5);
+        assert.equal(recall(rows[1]!), 0.5);
+        assert.isUndefined(precision({ tp: 0, fp: 0, fn: 3, open: 0 }));
+        assert.isUndefined(recall({ tp: 0, fp: 2, fn: 0, open: 0 }));
+
+        // added survives the export
+        const json = set.to_json() as any;
+        assert.isTrue(json.groups.find((g: any) => g.id == "g1").added);
+        assert.isTrue(json.groups.find((g: any) => g.id == "new#1").added);
     });
 
     test("add", function () {

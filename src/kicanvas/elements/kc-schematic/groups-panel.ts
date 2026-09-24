@@ -23,6 +23,8 @@ import {
 import type { SchematicViewer } from "../../../viewers/schematic/viewer";
 import {
     SymbolGroupSet,
+    precision,
+    recall,
     step_id,
     type GroupPart,
     type Review,
@@ -57,6 +59,7 @@ const shortcuts = [
     ["x", "wrong / clear", "Review"],
     ["u", "undo last review", "Review"],
     [":w", "export reviews", "Review"],
+    ["e", "evaluation table", "Review"],
     ["o", "new group", "Edit"],
     ["c", "copy group as new group", "Edit"],
     ["dd", "delete new group", "Edit"],
@@ -74,6 +77,10 @@ type Shortcut = (typeof shortcuts)[number][0];
 
 /** Shown in the details of groups that can be edited. */
 const edit_hint = "Shift-click symbols to add or remove them.";
+
+/** Explains how the evaluation sheet counts. */
+const evaluation_note =
+    "Top-level groups. Missed = groups added by a reviewer; recall is final once every group is reviewed and missing ones are added.";
 
 /** Keys that are only pressed together with others. */
 const modifier_keys = ["Shift", "Control", "Alt", "Meta", "CapsLock"];
@@ -145,8 +152,88 @@ export class KCSchematicGroupsPanelElement extends KCUIElement {
                 box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.4);
             }
 
-            .which-key[hidden] {
+            .which-key[hidden],
+            .evaluation[hidden] {
                 display: none;
+            }
+
+            .evaluation {
+                position: fixed;
+                z-index: 20;
+                box-sizing: border-box;
+                max-height: 60vh;
+                overflow: auto;
+                padding: 0.5em 1em 0.75em 1em;
+                background: var(--panel-bg);
+                color: var(--panel-fg);
+                border-top: 2px solid var(--panel-title-bg);
+                box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.4);
+            }
+
+            .evaluation .title {
+                display: flex;
+                align-items: baseline;
+                gap: 1em;
+                margin-bottom: 0.4em;
+            }
+
+            .evaluation .title strong {
+                font-size: 1.1em;
+            }
+
+            .evaluation .title span {
+                opacity: 0.7;
+            }
+
+            .evaluation .grid {
+                display: grid;
+                grid-template-columns:
+                    minmax(8em, max-content) repeat(4, minmax(4.5em, auto))
+                    minmax(9em, 1fr) minmax(9em, 1fr);
+                max-width: 60em;
+                font-variant-numeric: tabular-nums;
+            }
+
+            .evaluation .grid > div {
+                padding: 0.2em 0.6em;
+                text-align: right;
+                white-space: nowrap;
+            }
+
+            .evaluation .grid > .kind {
+                text-align: left;
+            }
+
+            .evaluation .grid > .head {
+                color: var(--panel-subtitle-fg);
+                background: var(--panel-subtitle-bg);
+            }
+
+            .evaluation .grid > .total {
+                font-weight: bold;
+                border-top: 1px solid var(--panel-subtitle-bg);
+            }
+
+            .evaluation .meter {
+                display: inline-block;
+                vertical-align: middle;
+                width: calc(100% - 3.5em);
+                height: 6px;
+                margin-left: 0.5em;
+                border-radius: 3px;
+                background: color-mix(
+                    in srgb,
+                    var(--input-accent) 25%,
+                    transparent
+                );
+                overflow: hidden;
+            }
+
+            .evaluation .meter span {
+                display: block;
+                height: 100%;
+                border-radius: 3px;
+                background: var(--input-accent);
             }
 
             .which-key .section {
@@ -223,6 +310,9 @@ export class KCSchematicGroupsPanelElement extends KCUIElement {
 
     @query(".which-key", true)
     private which_key_elm!: HTMLElement;
+
+    @query(".evaluation", true)
+    private evaluation_elm!: HTMLElement;
 
     #part_symbol: SchematicSymbol | null = null;
 
@@ -351,6 +441,8 @@ export class KCSchematicGroupsPanelElement extends KCUIElement {
                 this.groups.select(null);
             } else if (name == "export") {
                 this.#export();
+            } else if (name == "evaluation") {
+                this.#toggle_evaluation();
             } else if (name == "new") {
                 this.#new_group();
             } else if (name == "delete" && group) {
@@ -507,15 +599,109 @@ export class KCSchematicGroupsPanelElement extends KCUIElement {
             items.unshift(html`<div class="section">${prefix} …</div>`);
         }
 
+        this.#place_sheet(this.which_key_elm);
+        this.which_key_elm.replaceChildren(...items);
+        this.which_key_elm.hidden = false;
+    }
+
+    /** Places a sheet along the bottom of the viewer. */
+    #place_sheet(sheet: HTMLElement) {
         const rect = this.#host().getBoundingClientRect();
-        Object.assign(this.which_key_elm.style, {
+        Object.assign(sheet.style, {
             left: `${rect.left}px`,
             width: `${rect.width}px`,
             bottom: `${window.innerHeight - rect.bottom}px`,
         });
+    }
 
-        this.which_key_elm.replaceChildren(...items);
-        this.which_key_elm.hidden = false;
+    #toggle_evaluation() {
+        if (this.evaluation_elm.hidden) {
+            this.#place_sheet(this.evaluation_elm);
+            this.evaluation_elm.hidden = false;
+            this.#render_evaluation();
+        } else {
+            this.evaluation_elm.hidden = true;
+        }
+    }
+
+    /**
+     * Fills the evaluation sheet, if it's open, with precision and recall
+     * by kind, counted from the reviews.
+     */
+    #render_evaluation() {
+        if (this.evaluation_elm.hidden) {
+            return;
+        }
+
+        const percent = (value: number | undefined) =>
+            value === undefined ? undefined : Math.round(value * 100);
+
+        const metric = (
+            value: number | undefined,
+            detail: string,
+            total: boolean,
+        ) => {
+            const p = percent(value);
+            const cell = html`<div title="${detail}">
+                ${p === undefined ? "–" : `${p}%`}<span class="meter"
+                    ><span style="width: ${p ?? 0}%"></span
+                ></span>
+            </div>` as HTMLElement;
+            cell.classList.toggle("total", total);
+            return cell;
+        };
+
+        // A grid of divs rather than a table: the html template can't put
+        // values between table cells.
+        const cells: Node[] = [
+            "kind",
+            "✓ correct",
+            "✗ wrong",
+            "+ missed",
+            "open",
+            "precision",
+            "recall",
+        ].map(
+            (text, i) =>
+                html`<div class="head ${i ? "" : "kind"}">${text}</div>`,
+        );
+
+        for (const row of this.groups.evaluate()) {
+            const total = row.kind === undefined;
+            const row_cells = [
+                html`<div class="kind">${row.kind ?? "total"}</div>`,
+                html`<div>${row.tp}</div>`,
+                html`<div>${row.fp}</div>`,
+                html`<div>${row.fn}</div>`,
+                html`<div>${row.open}</div>`,
+            ] as HTMLElement[];
+            row_cells.forEach((c) => c.classList.toggle("total", total));
+
+            cells.push(
+                ...row_cells,
+                metric(
+                    precision(row),
+                    `${row.tp} of ${row.tp + row.fp} reviewed groups correct`,
+                    total,
+                ),
+                metric(
+                    recall(row),
+                    `${row.tp} of ${row.tp + row.fn} subcircuits found`,
+                    total,
+                ),
+            );
+        }
+
+        const grid = html`<div class="grid"></div>` as HTMLElement;
+        grid.replaceChildren(...cells);
+
+        this.evaluation_elm.replaceChildren(
+            html`<div class="title">
+                <strong>Evaluation</strong>
+                <span>${evaluation_note}</span>
+            </div>`,
+            grid,
+        );
     }
 
     #hide_which_key() {
@@ -566,7 +752,14 @@ export class KCSchematicGroupsPanelElement extends KCUIElement {
                     ?.focus();
                 break;
             case "Escape":
-                this.groups.select(null);
+                if (!this.evaluation_elm.hidden) {
+                    this.evaluation_elm.hidden = true;
+                } else {
+                    this.groups.select(null);
+                }
+                break;
+            case "e":
+                this.#toggle_evaluation();
                 break;
             case ":w":
                 this.#export();
@@ -956,10 +1149,16 @@ export class KCSchematicGroupsPanelElement extends KCUIElement {
             (g) => g.review !== undefined,
         ).length;
 
+        const total = this.groups.evaluate().at(-1)!;
+        const p = precision(total);
+        const r = recall(total);
+
         return [
             this.groups.title,
             this.groups.source,
             `${reviewed}/${this.groups.groups.length} reviewed`,
+            p === undefined ? null : `precision ${Math.round(p * 100)}%`,
+            r === undefined ? null : `recall ${Math.round(r * 100)}%`,
         ]
             .filter((t) => t)
             .join(" · ");
@@ -1038,6 +1237,7 @@ export class KCSchematicGroupsPanelElement extends KCUIElement {
         if (info) {
             info.textContent = this.#info();
         }
+        this.#render_evaluation();
     }
 
     override render() {
@@ -1063,6 +1263,13 @@ export class KCSchematicGroupsPanelElement extends KCUIElement {
                     <button
                         slot="actions"
                         type="button"
+                        name="evaluation"
+                        title="Evaluation table (e)">
+                        <kc-ui-icon>analytics</kc-ui-icon>
+                    </button>
+                    <button
+                        slot="actions"
+                        type="button"
                         name="export"
                         title="Export reviews as JSON">
                         <kc-ui-icon>download</kc-ui-icon>
@@ -1070,6 +1277,7 @@ export class KCSchematicGroupsPanelElement extends KCUIElement {
                 </kc-ui-panel-title>
                 <kc-ui-panel-body>
                     <div class="which-key" hidden></div>
+                    <div class="evaluation" hidden></div>
                     <kc-ui-panel-label
                         class="info"
                         title="Press ? for keyboard shortcuts"

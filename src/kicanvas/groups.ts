@@ -38,7 +38,8 @@ const log = new Logger("kicanvas:groups");
  *      "parent": "push_pull#1",        // optional, id of the parent group
  *      "description": "...",           // optional, string or list of strings
  *      "color": "#e377c2",             // optional, CSS color
- *      "review": "correct"             // optional, "correct" or "wrong"
+ *      "review": "correct",            // optional, "correct" or "wrong"
+ *      "added": true                   // optional, added by a reviewer
  *    }],
  *    "parts": {                        // optional, info about symbols
  *      "C2": { "kind": "capacitor_polarized", "value": "47uF" }
@@ -61,6 +62,11 @@ export interface SymbolGroup {
     description?: string;
     color?: string;
     review?: Review;
+    /**
+     * True for groups a reviewer added, such as subcircuits an analysis
+     * missed, rather than groups found by the analysis.
+     */
+    added?: boolean;
     /** Pages with symbols of this group, set by SymbolGroupSet.resolve(). */
     pages: ResolvedPage[];
     /** References that weren't found, set by SymbolGroupSet.resolve(). */
@@ -79,6 +85,26 @@ export interface GroupPart {
     value?: string;
     /** True if the reference wasn't found, set by SymbolGroupSet.resolve(). */
     missing: boolean;
+}
+
+/** Review counts of one kind of group, see SymbolGroupSet.evaluate(). */
+export interface EvaluationRow {
+    /** The kind, or undefined for the total. */
+    kind?: string;
+    tp: number;
+    fp: number;
+    fn: number;
+    open: number;
+}
+
+/** tp / (tp + fp), or undefined if nothing was reviewed. */
+export function precision(row: EvaluationRow): number | undefined {
+    return row.tp + row.fp ? row.tp / (row.tp + row.fp) : undefined;
+}
+
+/** tp / (tp + fn), or undefined if nothing was found or added. */
+export function recall(row: EvaluationRow): number | undefined {
+    return row.tp + row.fn ? row.tp / (row.tp + row.fn) : undefined;
 }
 
 export class SymbolGroupSet extends EventTarget {
@@ -286,6 +312,60 @@ export class SymbolGroupSet extends EventTarget {
     }
 
     /** True if every group has a review. */
+    /**
+     * Counts the reviews of the top-level groups by kind, for evaluating the
+     * tool that found the groups. Nested groups are left out, they're
+     * covered by their parent.
+     *
+     * - tp: found and reviewed correct
+     * - fp: found and reviewed wrong
+     * - fn: added by a reviewer and correct, i.e. missed
+     * - open: found and not reviewed yet
+     *
+     * Rows are sorted by the number of groups, the last row is the total
+     * with kind undefined.
+     */
+    evaluate(): EvaluationRow[] {
+        const rows = new Map<string, EvaluationRow>();
+        const total: EvaluationRow = { tp: 0, fp: 0, fn: 0, open: 0 };
+
+        for (const group of this.top_level) {
+            const key =
+                group.added && group.review != "correct"
+                    ? undefined
+                    : group.added
+                      ? "fn"
+                      : group.review == "correct"
+                        ? "tp"
+                        : group.review == "wrong"
+                          ? "fp"
+                          : "open";
+            if (!key) {
+                continue;
+            }
+
+            const kind = group.kind ?? "other";
+            const row = rows.get(kind) ?? {
+                kind,
+                tp: 0,
+                fp: 0,
+                fn: 0,
+                open: 0,
+            };
+            rows.set(kind, row);
+            row[key]++;
+            total[key]++;
+        }
+
+        const size = (r: EvaluationRow) => r.tp + r.fp + r.fn + r.open;
+        return [
+            ...[...rows.values()].sort(
+                (a, b) => size(b) - size(a) || a.kind!.localeCompare(b.kind!),
+            ),
+            total,
+        ];
+    }
+
     get all_reviewed(): boolean {
         return this.groups.every((g) => g.review !== undefined);
     }
@@ -437,6 +517,7 @@ export class SymbolGroupSet extends EventTarget {
             label: id,
             kind,
             review: "correct",
+            added: true,
             pages: [],
             missing: [],
         };
@@ -598,6 +679,7 @@ function parse_group(item: unknown, index: number): SymbolGroup | null {
         description: opt_string(description) || undefined,
         color: opt_string(item["color"]),
         review: parse_review(item["review"], id),
+        added: item["added"] === true || undefined,
         pages: [],
         missing: [],
     };
@@ -624,6 +706,7 @@ function group_to_json(group: SymbolGroup): Record<string, unknown> {
         parent: group.parent,
         description: group.description?.split("\n"),
         color: group.color,
+        added: group.added,
     });
 }
 

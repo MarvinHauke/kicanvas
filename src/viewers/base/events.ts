@@ -21,6 +21,11 @@ export class KiCanvasLoadEvent extends KiCanvasEvent<null> {
 interface SelectDetails {
     item: unknown;
     previous: unknown;
+    /**
+     * True if the item was picked by a click with Shift, Ctrl or Cmd held,
+     * to add it to or remove it from a set of items.
+     */
+    additive?: boolean;
 }
 
 export class KiCanvasSelectEvent extends KiCanvasEvent<SelectDetails> {

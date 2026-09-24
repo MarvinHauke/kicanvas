@@ -113,7 +113,10 @@ export abstract class KCViewerAppElement<
         // Handle item selection in the viewers.
         this.addDisposable(
             this.viewer.addEventListener(KiCanvasSelectEvent.type, (e) => {
-                this.on_viewer_select(e.detail.item, e.detail.previous);
+                // Picks that add to a set aren't double selections.
+                if (!e.detail.additive) {
+                    this.on_viewer_select(e.detail.item, e.detail.previous);
+                }
             }),
         );
 

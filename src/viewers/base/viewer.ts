@@ -32,6 +32,7 @@ export abstract class Viewer extends EventTarget {
     protected setup_finished = new Barrier();
 
     #selected: BBox | null;
+    #additive_pick = false;
     #highlights: HighlightGroup[] = [];
 
     constructor(
@@ -97,7 +98,12 @@ export abstract class Viewer extends EventTarget {
             this.disposables.add(
                 listen(this.canvas, "click", (e) => {
                     const items = this.layers.query_point(this.mouse_position);
-                    this.on_pick(this.mouse_position, items);
+                    this.#additive_pick = e.shiftKey || e.ctrlKey || e.metaKey;
+                    try {
+                        this.on_pick(this.mouse_position, items);
+                    } finally {
+                        this.#additive_pick = false;
+                    }
                 }),
             );
         }
@@ -211,6 +217,7 @@ export abstract class Viewer extends EventTarget {
             new KiCanvasSelectEvent({
                 item: this.#selected?.context,
                 previous: previous?.context,
+                additive: this.#additive_pick,
             }),
         );
 

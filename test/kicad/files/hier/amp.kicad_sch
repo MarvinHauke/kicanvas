@@ -1,0 +1,95 @@
+(kicad_sch
+	(version 20231120)
+	(generator "eeschema")
+	(generator_version "8.0")
+	(uuid "00000000-0000-0000-0000-00000000000d")
+	(paper "A4")
+	(lib_symbols
+		(symbol "Device:R"
+			(property "Reference" "R" (at 0 0 0) (effects (font (size 1.27 1.27))))
+			(property "Value" "R" (at 0 0 0) (effects (font (size 1.27 1.27))))
+			(symbol "R_0_1"
+				(rectangle (start -1 2.5) (end 1 -2.5)
+					(stroke (width 0.254) (type default))
+					(fill (type none))
+				)
+			)
+		)
+		(symbol "Amp:Dual"
+			(property "Reference" "U" (at 0 0 0) (effects (font (size 1.27 1.27))))
+			(property "Value" "Dual" (at 0 0 0) (effects (font (size 1.27 1.27))))
+			(symbol "Dual_1_1"
+				(rectangle (start -5 5) (end 5 -5)
+					(stroke (width 0.254) (type default))
+					(fill (type none))
+				)
+			)
+			(symbol "Dual_2_1"
+				(rectangle (start -5 5) (end 5 -5)
+					(stroke (width 0.254) (type default))
+					(fill (type none))
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Device:R")
+		(at 20 20 0)
+		(unit 1)
+		(uuid "00000000-0000-0000-0000-000000000001")
+		(property "Reference" "R1" (at 20 20 0) (effects (font (size 1.27 1.27))))
+		(property "Value" "v" (at 20 20 0) (effects (font (size 1.27 1.27))))
+		(instances
+			(project "hier"
+				(path "/00000000-0000-0000-0000-00000000000a/00000000-0000-0000-0000-00000000000b"
+					(reference "R1")
+					(unit 1)
+				)
+				(path "/00000000-0000-0000-0000-00000000000a/00000000-0000-0000-0000-00000000000c"
+					(reference "R11")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Amp:Dual")
+		(at 40 20 0)
+		(unit 1)
+		(uuid "00000000-0000-0000-0000-000000000002")
+		(property "Reference" "U1" (at 40 20 0) (effects (font (size 1.27 1.27))))
+		(property "Value" "v" (at 40 20 0) (effects (font (size 1.27 1.27))))
+		(instances
+			(project "hier"
+				(path "/00000000-0000-0000-0000-00000000000a/00000000-0000-0000-0000-00000000000b"
+					(reference "U1")
+					(unit 1)
+				)
+				(path "/00000000-0000-0000-0000-00000000000a/00000000-0000-0000-0000-00000000000c"
+					(reference "U11")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Amp:Dual")
+		(at 60 20 0)
+		(unit 2)
+		(uuid "00000000-0000-0000-0000-000000000003")
+		(property "Reference" "U1" (at 60 20 0) (effects (font (size 1.27 1.27))))
+		(property "Value" "v" (at 60 20 0) (effects (font (size 1.27 1.27))))
+		(instances
+			(project "hier"
+				(path "/00000000-0000-0000-0000-00000000000a/00000000-0000-0000-0000-00000000000b"
+					(reference "U1")
+					(unit 2)
+				)
+				(path "/00000000-0000-0000-0000-00000000000a/00000000-0000-0000-0000-00000000000c"
+					(reference "U11")
+					(unit 2)
+				)
+			)
+		)
+	)
+)

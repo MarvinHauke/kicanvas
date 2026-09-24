@@ -157,17 +157,8 @@ export class KicadSch {
         // See SCH_SHEET_LIST::UpdateSymbolInstanceData
         path ??= ``;
 
-        const root_symbol_instances = (
-            this.project?.root_schematic_page?.document as KicadSch
-        )?.symbol_instances;
-        const global_symbol_instances = this.symbol_instances;
-
         for (const s of this.symbols.values()) {
-            const symbol_path = `${path}/${s.uuid}`;
-            const instance_data =
-                root_symbol_instances?.get(symbol_path) ??
-                global_symbol_instances?.get(symbol_path) ??
-                s.instances.get(path);
+            const instance_data = this.symbol_instance_data(s, path);
 
             if (!instance_data) {
                 continue;
@@ -206,6 +197,28 @@ export class KicadSch {
                 s.instances.set("", inst);
             }
         }
+    }
+
+    /**
+     * Returns the instance data (reference, unit, etc.) for a symbol at the
+     * given sheet path without modifying the symbol. Sheets that are used
+     * multiple times share one document, so this is needed to look up the
+     * reference a symbol has on a page other than the one being shown.
+     */
+    symbol_instance_data(
+        symbol: SchematicSymbol,
+        path: string,
+    ): SymbolInstance | SchematicSymbolInstance | undefined {
+        const root_symbol_instances = (
+            this.project?.root_schematic_page?.document as KicadSch
+        )?.symbol_instances;
+        const symbol_path = `${path}/${symbol.uuid}`;
+
+        return (
+            root_symbol_instances?.get(symbol_path) ??
+            this.symbol_instances?.get(symbol_path) ??
+            symbol.instances.get(path)
+        );
     }
 
     *items() {

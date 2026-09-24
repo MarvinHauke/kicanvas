@@ -246,7 +246,27 @@ export class SymbolGroupSet extends EventTarget {
             return;
         }
 
-        group.review = review ?? undefined;
+        this.#review_history.push({ id, review: group.review });
+        this.#apply_review(group, review ?? undefined);
+    }
+
+    /**
+     * Reverts the last review change.
+     * @returns the group whose review was reverted, if any.
+     */
+    undo_review(): SymbolGroup | undefined {
+        const last = this.#review_history.pop();
+        const group = last ? this.#by_id.get(last.id) : undefined;
+        if (group) {
+            this.#apply_review(group, last!.review);
+        }
+        return group;
+    }
+
+    #review_history: { id: string; review?: Review }[] = [];
+
+    #apply_review(group: SymbolGroup, review?: Review) {
+        group.review = review;
         this.dispatchEvent(
             new CustomEvent(SymbolGroupSet.review_event, { detail: group }),
         );
@@ -360,6 +380,30 @@ export class SymbolGroupSet extends EventTarget {
             }
         }
     }
+}
+
+/**
+ * Steps through a list of ids from the current one, wrapping around, and
+ * returns the first id that matches. Without a current id, stepping forward
+ * starts at the first id and stepping back at the last.
+ */
+export function step_id(
+    ids: string[],
+    current: string | undefined,
+    delta: 1 | -1,
+    matches: (id: string) => boolean = () => true,
+): string | undefined {
+    const n = ids.length;
+    const index = current === undefined ? -1 : ids.indexOf(current);
+    const start = index == -1 ? (delta == 1 ? -1 : n) : index;
+
+    for (let i = 1; i <= n; i++) {
+        const id = ids[(((start + delta * i) % n) + n) % n]!;
+        if (matches(id)) {
+            return id;
+        }
+    }
+    return undefined;
 }
 
 function parse_group(item: unknown, index: number): SymbolGroup | null {

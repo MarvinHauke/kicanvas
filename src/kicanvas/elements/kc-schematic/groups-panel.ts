@@ -21,7 +21,13 @@ import {
     KiCanvasSelectEvent,
 } from "../../../viewers/base/events";
 import type { SchematicViewer } from "../../../viewers/schematic/viewer";
-import { SymbolGroupSet, type GroupPart, type SymbolGroup } from "../../groups";
+import {
+    SymbolGroupSet,
+    step_id,
+    type GroupPart,
+    type Review,
+    type SymbolGroup,
+} from "../../groups";
 import type { Project } from "../../project";
 import { ref_matches, resolve_refs } from "../../refs";
 
@@ -39,6 +45,25 @@ import { ref_matches, resolve_refs } from "../../refs";
  * When a symbol is selected in the viewer, the groups it belongs to are
  * listed above the other groups.
  */
+/** Keyboard shortcuts of the panel, vim style. */
+const shortcuts = [
+    ["j", "next group"],
+    ["k", "previous group"],
+    ["gg", "first group"],
+    ["G", "last group"],
+    ["n", "next unreviewed"],
+    ["N", "prev. unreviewed"],
+    ["y", "correct / clear"],
+    ["x", "wrong / clear"],
+    ["u", "undo last review"],
+    ["/", "search"],
+    ["Escape", "clear selection"],
+    [":w", "export reviews"],
+    ["?", "this help"],
+] as const;
+
+type Shortcut = (typeof shortcuts)[number][0];
+
 export class KCSchematicGroupsPanelElement extends KCUIElement {
     static override styles = [
         ...KCUIElement.styles,
@@ -124,6 +149,9 @@ export class KCSchematicGroupsPanelElement extends KCUIElement {
 
     @query(".details", true)
     private details_elm!: HTMLElement;
+
+    @query(".keys", true)
+    private keys_elm!: HTMLElement;
 
     #part_symbol: SchematicSymbol | null = null;
 
@@ -225,13 +253,168 @@ export class KCSchematicGroupsPanelElement extends KCUIElement {
             } else if (name == "export") {
                 this.#export();
             } else if (group && (name == "correct" || name == "wrong")) {
-                // Selecting the current review again clears it.
-                this.groups.set_review(
-                    group.id,
-                    group.review == name ? null : name,
-                );
+                this.#toggle_review(name);
             }
         });
+
+        // Keyboard shortcuts go to the viewer that was clicked last, or to
+        // the only one on the page.
+        const host = this.#host();
+        this.#keys_active =
+            document.getElementsByTagName(host.tagName).length <= 1;
+
+        this.addDisposable(
+            listen(window, "pointerdown", (e) => {
+                this.#keys_active = e.composedPath().includes(host);
+            }),
+        );
+
+        this.addDisposable(
+            listen(window, "keydown", (e) => {
+                this.#on_key(e as KeyboardEvent);
+            }),
+        );
+    }
+
+    /** Sets the review of the selected group, or clears it if it's set. */
+    #toggle_review(review: Review) {
+        const group = this.groups.selected_group;
+        if (group) {
+            this.groups.set_review(
+                group.id,
+                group.review == review ? null : review,
+            );
+        }
+    }
+
+    /** The element on the page that contains this panel. */
+    #host(): Element {
+        let host: Element | undefined;
+        let root = this.getRootNode();
+        while (root instanceof ShadowRoot) {
+            host = root.host;
+            root = host.getRootNode();
+        }
+        return host ?? this;
+    }
+
+    #keys_active = false;
+
+    /** Keys typed so far of a shortcut with several keys, such as "gg". */
+    #pending_keys = "";
+
+    #on_key(e: KeyboardEvent) {
+        // Only while the panel is shown.
+        if (
+            !this.#keys_active ||
+            e.ctrlKey ||
+            e.metaKey ||
+            e.altKey ||
+            !this.getBoundingClientRect().width
+        ) {
+            return;
+        }
+
+        const target = e.composedPath()[0];
+        if (
+            target instanceof HTMLElement &&
+            target.closest("input, textarea, select, [contenteditable]")
+        ) {
+            if (e.key == "Escape") {
+                target.blur();
+            }
+            return;
+        }
+
+        const keys = this.#pending_keys + e.key;
+        this.#pending_keys = "";
+
+        const shortcut = shortcuts.find(([k]) => k == keys)?.[0];
+        if (shortcut) {
+            e.preventDefault();
+            this.#run_shortcut(shortcut);
+        } else if (shortcuts.some(([k]) => k.startsWith(keys))) {
+            e.preventDefault();
+            this.#pending_keys = keys;
+        }
+    }
+
+    #run_shortcut(shortcut: Shortcut) {
+        const ids = this.#listed_ids();
+        const selected = this.groups.selected;
+        const unreviewed = (id: string) =>
+            this.groups.by_id(id)?.review === undefined;
+
+        switch (shortcut) {
+            case "j":
+            case "k":
+                this.#go_to(step_id(ids, selected, shortcut == "j" ? 1 : -1));
+                break;
+            case "gg":
+                this.#go_to(ids[0]);
+                break;
+            case "G":
+                this.#go_to(ids.at(-1));
+                break;
+            case "n":
+            case "N":
+                this.#go_to(
+                    step_id(
+                        ids,
+                        selected,
+                        shortcut == "n" ? 1 : -1,
+                        unreviewed,
+                    ),
+                );
+                break;
+            case "y":
+                this.#toggle_review("correct");
+                break;
+            case "x":
+                this.#toggle_review("wrong");
+                break;
+            case "u":
+                this.#go_to(this.groups.undo_review()?.id);
+                break;
+            case "/":
+                this.search_input_elm.renderRoot
+                    .querySelector("input")
+                    ?.focus();
+                break;
+            case "Escape":
+                if (!this.keys_elm.hidden) {
+                    this.keys_elm.hidden = true;
+                } else {
+                    this.groups.select(null);
+                }
+                break;
+            case ":w":
+                this.#export();
+                break;
+            case "?":
+                this.keys_elm.hidden = !this.keys_elm.hidden;
+                break;
+        }
+    }
+
+    /** Ids of the groups in the list, in list order, without filtered ones. */
+    #listed_ids(): string[] {
+        return [
+            ...this.menu.querySelectorAll<KCUIMenuItemElement>(
+                "kc-ui-menu-item",
+            ),
+        ]
+            .filter((item) => item.style.display != "none")
+            .map((item) => item.name);
+    }
+
+    /** Selects a group and scrolls it into view. */
+    #go_to(id: string | undefined) {
+        if (id === undefined) {
+            return;
+        }
+        this.groups.select(id);
+        this.menu.item_by_name(id)?.scrollIntoView({ block: "nearest" });
     }
 
     override renderedCallback() {
@@ -615,7 +798,22 @@ export class KCSchematicGroupsPanelElement extends KCUIElement {
                     </button>
                 </kc-ui-panel-title>
                 <kc-ui-panel-body>
-                    <kc-ui-panel-label class="info"
+                    <div class="keys" hidden>
+                        <kc-ui-property-list>
+                            ${shortcuts.map(
+                                ([keys, description]) =>
+                                    html`<kc-ui-property-list-item
+                                        name="${keys == "Escape"
+                                            ? "Esc"
+                                            : keys}">
+                                        ${description}
+                                    </kc-ui-property-list-item>`,
+                            )}
+                        </kc-ui-property-list>
+                    </div>
+                    <kc-ui-panel-label
+                        class="info"
+                        title="Press ? for keyboard shortcuts"
                         >${this.#info()}</kc-ui-panel-label
                     >
                     <div class="details"></div>

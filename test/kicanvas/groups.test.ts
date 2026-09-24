@@ -6,7 +6,7 @@
 
 import { assert } from "chai";
 
-import { SymbolGroupSet } from "../../src/kicanvas/groups";
+import { SymbolGroupSet, step_id } from "../../src/kicanvas/groups";
 import { Project } from "../../src/kicanvas/project";
 import { parse_refs } from "../../src/kicanvas/refs";
 import { LocalFileSystem } from "../../src/kicanvas/services/vfs";
@@ -249,6 +249,42 @@ suite("kicanvas.groups", function () {
         assert.deepEqual(events, ["b", "a"]);
         assert.equal(set.by_id("b")!.review, "wrong");
         assert.isUndefined(set.by_id("a")!.review);
+    });
+
+    test("undo review", function () {
+        const set = SymbolGroupSet.parse(example);
+        set.set_review("amp#1", "correct");
+        set.set_review("amp#1", "wrong");
+        set.set_review("amp#2", "correct");
+
+        assert.equal(set.undo_review()?.id, "amp#2");
+        assert.isUndefined(set.by_id("amp#2")!.review);
+        assert.equal(set.undo_review()?.id, "amp#1");
+        assert.equal(set.by_id("amp#1")!.review, "correct");
+        assert.equal(set.undo_review()?.id, "amp#1");
+        assert.isUndefined(set.by_id("amp#1")!.review);
+        assert.isUndefined(set.undo_review());
+    });
+
+    test("step_id", function () {
+        const ids = ["a", "b", "c", "d"];
+        assert.equal(step_id(ids, undefined, 1), "a");
+        assert.equal(step_id(ids, undefined, -1), "d");
+        assert.equal(step_id(ids, "b", 1), "c");
+        assert.equal(step_id(ids, "d", 1), "a");
+        assert.equal(step_id(ids, "a", -1), "d");
+        assert.equal(step_id(ids, "unknown", 1), "a");
+
+        const odd = (id: string) => id == "a" || id == "c";
+        assert.equal(step_id(ids, "a", 1, odd), "c");
+        assert.equal(step_id(ids, "c", 1, odd), "a");
+        assert.equal(step_id(ids, "b", -1, odd), "a");
+        assert.equal(
+            step_id(ids, "a", 1, (id) => id == "a"),
+            "a",
+        );
+        assert.isUndefined(step_id(ids, "a", 1, () => false));
+        assert.isUndefined(step_id([], undefined, 1));
     });
 
     test("to_json keeps the document and updates reviews", function () {

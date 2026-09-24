@@ -47,22 +47,33 @@ import { ref_matches, resolve_refs } from "../../refs";
  */
 /** Keyboard shortcuts of the panel, vim style. */
 const shortcuts = [
-    ["j", "next group"],
-    ["k", "previous group"],
-    ["gg", "first group"],
-    ["G", "last group"],
-    ["n", "next unreviewed"],
-    ["N", "prev. unreviewed"],
-    ["y", "correct / clear"],
-    ["x", "wrong / clear"],
-    ["u", "undo last review"],
-    ["/", "search"],
-    ["Escape", "clear selection"],
-    [":w", "export reviews"],
-    ["?", "this help"],
+    ["j", "next group", "Move"],
+    ["k", "previous group", "Move"],
+    ["gg", "first group", "Move"],
+    ["G", "last group", "Move"],
+    ["n", "next unreviewed", "Move"],
+    ["N", "previous unreviewed", "Move"],
+    ["y", "correct / clear", "Review"],
+    ["x", "wrong / clear", "Review"],
+    ["u", "undo last review", "Review"],
+    [":w", "export reviews", "Review"],
+    ["zz", "zoom to group", "Zoom"],
+    ["zs", "zoom to selected symbol", "Zoom"],
+    ["zp", "zoom to page", "Zoom"],
+    ["+", "zoom in", "Zoom"],
+    ["-", "zoom out", "Zoom"],
+    ["/", "search", "Other"],
+    ["Escape", "close / clear selection", "Other"],
+    ["?", "show shortcuts", "Other"],
 ] as const;
 
 type Shortcut = (typeof shortcuts)[number][0];
+
+/** Keys that are only pressed together with others. */
+const modifier_keys = ["Shift", "Control", "Alt", "Meta", "CapsLock"];
+
+/** Delay before the shortcuts popup shows how a started shortcut goes on. */
+const which_key_delay = 400;
 
 export class KCSchematicGroupsPanelElement extends KCUIElement {
     static override styles = [
@@ -112,6 +123,42 @@ export class KCSchematicGroupsPanelElement extends KCUIElement {
                 color: var(--list-item-active-fg);
             }
 
+            .which-key {
+                position: fixed;
+                z-index: 20;
+                box-sizing: border-box;
+                max-height: 50vh;
+                overflow: auto;
+                padding: 0.5em 1em 0.75em 1em;
+                display: grid;
+                grid-template-columns: repeat(auto-fill, minmax(14em, 1fr));
+                gap: 0.2em 1.5em;
+                background: var(--panel-bg);
+                color: var(--panel-fg);
+                border-top: 2px solid var(--panel-title-bg);
+                box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.4);
+            }
+
+            .which-key[hidden] {
+                display: none;
+            }
+
+            .which-key .section {
+                grid-column: 1 / -1;
+                margin-top: 0.3em;
+                color: var(--panel-subtitle-fg);
+                background: var(--panel-subtitle-bg);
+                padding: 0.1em 0.3em;
+            }
+
+            .which-key kbd {
+                display: inline-block;
+                min-width: 2em;
+                font-family: monospace;
+                font-weight: bold;
+                color: var(--input-accent);
+            }
+
             .details p {
                 margin: 0.25em 0.2em;
                 white-space: pre-wrap;
@@ -150,8 +197,8 @@ export class KCSchematicGroupsPanelElement extends KCUIElement {
     @query(".details", true)
     private details_elm!: HTMLElement;
 
-    @query(".keys", true)
-    private keys_elm!: HTMLElement;
+    @query(".which-key", true)
+    private which_key_elm!: HTMLElement;
 
     #part_symbol: SchematicSymbol | null = null;
 
@@ -266,6 +313,7 @@ export class KCSchematicGroupsPanelElement extends KCUIElement {
         this.addDisposable(
             listen(window, "pointerdown", (e) => {
                 this.#keys_active = e.composedPath().includes(host);
+                this.#hide_which_key();
             }),
         );
 
@@ -326,17 +374,75 @@ export class KCSchematicGroupsPanelElement extends KCUIElement {
             return;
         }
 
+        if (modifier_keys.includes(e.key)) {
+            return;
+        }
+
         const keys = this.#pending_keys + e.key;
         this.#pending_keys = "";
+
+        const popup_open = !this.which_key_elm.hidden;
+        this.#hide_which_key();
 
         const shortcut = shortcuts.find(([k]) => k == keys)?.[0];
         if (shortcut) {
             e.preventDefault();
-            this.#run_shortcut(shortcut);
+            // "?" and Escape close the popup if it's open.
+            if (!(popup_open && (shortcut == "?" || shortcut == "Escape"))) {
+                this.#run_shortcut(shortcut);
+            }
         } else if (shortcuts.some(([k]) => k.startsWith(keys))) {
+            // Like which-key: if the next key doesn't come soon, show how
+            // the shortcut can go on.
             e.preventDefault();
             this.#pending_keys = keys;
+            this.#which_key_timer = window.setTimeout(
+                () => this.#show_which_key(keys),
+                which_key_delay,
+            );
         }
+    }
+
+    #which_key_timer?: number;
+
+    /**
+     * Shows the shortcuts that start with prefix, or all of them, in a
+     * popup along the bottom of the viewer.
+     */
+    #show_which_key(prefix = "") {
+        const entries = shortcuts.filter(
+            ([keys]) => keys.startsWith(prefix) && keys != prefix,
+        );
+
+        const items: Node[] = [];
+        let section = "";
+        for (const [keys, description, entry_section] of entries) {
+            if (!prefix && entry_section != section) {
+                section = entry_section;
+                items.push(html`<div class="section">${section}</div>`);
+            }
+            const shown = keys == "Escape" ? "Esc" : keys.slice(prefix.length);
+            items.push(html`<div><kbd>${shown}</kbd> ${description}</div>`);
+        }
+
+        if (prefix) {
+            items.unshift(html`<div class="section">${prefix} …</div>`);
+        }
+
+        const rect = this.#host().getBoundingClientRect();
+        Object.assign(this.which_key_elm.style, {
+            left: `${rect.left}px`,
+            width: `${rect.width}px`,
+            bottom: `${window.innerHeight - rect.bottom}px`,
+        });
+
+        this.which_key_elm.replaceChildren(...items);
+        this.which_key_elm.hidden = false;
+    }
+
+    #hide_which_key() {
+        window.clearTimeout(this.#which_key_timer);
+        this.which_key_elm.hidden = true;
     }
 
     #run_shortcut(shortcut: Shortcut) {
@@ -382,17 +488,32 @@ export class KCSchematicGroupsPanelElement extends KCUIElement {
                     ?.focus();
                 break;
             case "Escape":
-                if (!this.keys_elm.hidden) {
-                    this.keys_elm.hidden = true;
-                } else {
-                    this.groups.select(null);
-                }
+                this.groups.select(null);
                 break;
             case ":w":
                 this.#export();
                 break;
             case "?":
-                this.keys_elm.hidden = !this.keys_elm.hidden;
+                this.#show_which_key();
+                break;
+            case "zz": {
+                const group = this.groups.selected_group;
+                if (group) {
+                    this.viewer.zoom_to_refs(group.refs);
+                }
+                break;
+            }
+            case "zs":
+                this.viewer.zoom_to_selection();
+                break;
+            case "zp":
+                this.viewer.zoom_to_page();
+                break;
+            case "+":
+                this.viewer.zoom_by(1.5);
+                break;
+            case "-":
+                this.viewer.zoom_by(1 / 1.5);
                 break;
         }
     }
@@ -798,19 +919,7 @@ export class KCSchematicGroupsPanelElement extends KCUIElement {
                     </button>
                 </kc-ui-panel-title>
                 <kc-ui-panel-body>
-                    <div class="keys" hidden>
-                        <kc-ui-property-list>
-                            ${shortcuts.map(
-                                ([keys, description]) =>
-                                    html`<kc-ui-property-list-item
-                                        name="${keys == "Escape"
-                                            ? "Esc"
-                                            : keys}">
-                                        ${description}
-                                    </kc-ui-property-list-item>`,
-                            )}
-                        </kc-ui-property-list>
-                    </div>
+                    <div class="which-key" hidden></div>
                     <kc-ui-panel-label
                         class="info"
                         title="Press ? for keyboard shortcuts"

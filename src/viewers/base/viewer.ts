@@ -313,6 +313,30 @@ export abstract class Viewer extends EventTarget {
         this.draw();
     }
 
+    /**
+     * Zooms in (factor > 1) or out (factor < 1) around the center of the
+     * view, within the limits of mouse zooming.
+     */
+    zoom_by(factor: number) {
+        const camera = this.viewport.camera;
+        camera.zoom = Math.min(190, Math.max(0.5, camera.zoom * factor));
+        this.draw();
+    }
+
+    /**
+     * Zooms to the items with the given references in the current document.
+     * @returns false if none of them are in the current document.
+     */
+    zoom_to_refs(refs: RefQuery[]): boolean {
+        const bboxes = this.find_refs_bboxes(refs);
+        if (!bboxes.length) {
+            return false;
+        }
+        this.viewport.camera.bbox = BBox.combine(bboxes).grow(10);
+        this.draw();
+        return true;
+    }
+
     flip_view() {
         const flip = !this.viewport.camera.flipped;
 

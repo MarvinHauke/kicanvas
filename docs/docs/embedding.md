@@ -130,6 +130,135 @@ This example shows how to use `<kicanvas-source>` along with inline KiCad data. 
     </kicanvas-source>
 </kicanvas-embed>
 
+### Highlighting symbols
+
+Use `<kicanvas-highlight>` to mark groups of schematic symbols, for example the parts of a subcircuit. Each group is listed in the **Subcircuits** panel. Only the selected group is drawn: its symbols get transparent boxes (symbols within 2.54 mm of each other share a box), and separate boxes are linked by dashed lines. If the group's symbols are on several sheets, its label says how many are elsewhere, for example `+2 on amp_left`.
+
+```html
+<kicanvas-embed src="/examples/amplifier.kicad_sch" controls="full">
+    <kicanvas-highlight
+        refs="U1.A R1 R2"
+        label="#1 buffer"
+        group="buffer"
+        title="unit A of U1 with its feedback resistors"
+        selected></kicanvas-highlight>
+    <kicanvas-highlight
+        refs="C3 C4"
+        group="decoupling"
+        ambiguous></kicanvas-highlight>
+</kicanvas-embed>
+```
+
+Attributes of `<kicanvas-highlight>`:
+
+- `refs` - the references of the symbols, separated by spaces. `U1.A` names unit A of `U1`, `U1` names all its units. References are looked up on every sheet, including each instance of a sheet that's used more than once.
+- `label` - the name shown in the panel and on the schematic. Defaults to `refs`.
+- `group` - the kind of group. Groups of the same kind get the same color and are listed together.
+- `color` - a CSS color that overrides the group color.
+- `title` - a description, shown in the panel.
+- `ambiguous` - draws a dashed outline, for groups that aren't certain.
+- `selected` - selects this group when the viewer loads.
+
+### Symbol groups and review
+
+For many groups, such as the output of a circuit analysis tool, put them in a `<kicanvas-groups>` element as JSON, either inline or from a URL with `src`. The **Subcircuits** panel lists them and lets you review each one as correct or wrong.
+
+```html
+<kicanvas-embed controls="full">
+    <kicanvas-source src="/examples/amplifier.kicad_sch"></kicanvas-source>
+    <kicanvas-groups src="/examples/amplifier.groups.json"></kicanvas-groups>
+</kicanvas-embed>
+```
+
+The JSON format, version 1:
+
+```json
+{
+    "version": 1,
+    "title": "amplifier",
+    "source": "analysis",
+    "reviewed": false,
+    "selected": "inverting_amp#1",
+    "groups": [
+        {
+            "id": "inverting_amp#1",
+            "refs": ["R42", "R43", "U1.A"],
+            "kind": "inverting_amp",
+            "description": ["negative feedback closed through R43"]
+        },
+        {
+            "id": "voltage_divider#8",
+            "refs": ["R7", "R8"],
+            "kind": "voltage_divider",
+            "parent": "inverting_amp#1",
+            "status": "ambiguous",
+            "review": "correct"
+        }
+    ],
+    "parts": {
+        "R42": { "kind": "resistor", "value": "10k" },
+        "U1": { "kind": "opamp", "value": "TL072" }
+    }
+}
+```
+
+| Field                  | Required | Meaning                                                                               |
+| ---------------------- | -------- | ------------------------------------------------------------------------------------- |
+| `version`              | yes      | Always `1`.                                                                           |
+| `title`, `source`      |          | Shown at the top of the panel. `title` also names the exported file.                  |
+| `reviewed`             |          | Whether the groups have been reviewed.                                                |
+| `selected`             |          | The id of the group selected when the viewer loads.                                   |
+| `groups[].id`          | yes      | A unique id.                                                                          |
+| `groups[].refs`        | yes      | The references of the symbols, as a list or a string, like in `<kicanvas-highlight>`. |
+| `groups[].label`       |          | The name shown, defaults to `id`.                                                     |
+| `groups[].kind`        |          | Groups of the same kind get the same color and are listed together.                   |
+| `groups[].status`      |          | `"ambiguous"` draws a dashed outline and a `?` in the list.                           |
+| `groups[].parent`      |          | The id of the group this one is part of. It's listed under its parent.                |
+| `groups[].description` |          | A string or a list of strings, shown in the details.                                  |
+| `groups[].color`       |          | A CSS color that overrides the kind's color.                                          |
+| `groups[].review`      |          | `"correct"` or `"wrong"`, set by reviewing.                                           |
+| `parts`                |          | The kind and value of each symbol by reference, shown in the details.                 |
+
+Unknown fields are ignored, and kept when the reviews are exported.
+
+The **Subcircuits** panel shows:
+
+- the groups by kind, with nested groups under their parent, and marks: `✓` correct, `✗` wrong, `?` ambiguous, `!` references that weren't found.
+- the details of the selected group: kind, status, description, the group it's part of and the groups it contains, and its parts with kind and value. Selecting a part selects its symbol, switching sheets if needed.
+- the groups of the symbol selected in the schematic.
+- the review progress, such as `3/29 reviewed`.
+
+**Reviewing:** mark the selected group with **✓ Correct** or **✗ Wrong**. Selecting the same button again clears the review. The download button in the panel title exports the groups as `<title>.groups.json`. The file is the loaded JSON with only the `review` of each group changed, and `reviewed` is set to `true` once every group has a review. The browser asks before you leave the page with reviews that weren't exported.
+
+**Keyboard shortcuts** work while the Subcircuits panel is open. They're vim style: press `?` to see them all. When you start a shortcut with several keys, such as `z`, a popup shows how it can go on.
+
+| Keys       | Action                                     |
+| ---------- | ------------------------------------------ |
+| `j` / `k`  | next / previous group                      |
+| `gg` / `G` | first / last group                         |
+| `n` / `N`  | next / previous group without a review     |
+| `y` / `x`  | mark correct / wrong, again to clear       |
+| `u`        | undo the last review                       |
+| `:w`       | export the reviews                         |
+| `zz`       | zoom to the selected group                 |
+| `zs`       | zoom to the selected symbol                |
+| `zp`       | zoom to the page                           |
+| `+` / `-`  | zoom in / out                              |
+| `/`        | search the groups, `Esc` leaves the search |
+| `Esc`      | close the popup, or clear the selection    |
+| `?`        | show all shortcuts                         |
+
+`j`, `k` and `n` only go through the groups the search lets through. On a page with several viewers, the shortcuts go to the one that was clicked last.
+
+From JavaScript, the groups are available as `groups` on the `<kicanvas-embed>` element:
+
+```js
+const embed = document.querySelector("kicanvas-embed");
+embed.groups.select("inverting_amp#1"); // or null to clear the selection
+embed.groups.set_review("inverting_amp#1", "correct");
+const json = embed.groups.to_json();
+```
+
 ## Attributes
 
 !!! warning "Not yet implemented"

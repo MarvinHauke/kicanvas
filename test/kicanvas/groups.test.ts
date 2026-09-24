@@ -8,6 +8,7 @@ import { assert } from "chai";
 
 import { SymbolGroupSet } from "../../src/kicanvas/groups";
 import { Project } from "../../src/kicanvas/project";
+import { parse_refs } from "../../src/kicanvas/refs";
 import { LocalFileSystem } from "../../src/kicanvas/services/vfs";
 import amp_src from "../kicad/files/hier/amp.kicad_sch";
 import root_src from "../kicad/files/hier/root.kicad_sch";
@@ -221,6 +222,88 @@ suite("kicanvas.groups", function () {
 
         assert.deepEqual(events, ["amp#1", null]);
         assert.isUndefined(set.selected_group);
+    });
+
+    test("review", function () {
+        const set = SymbolGroupSet.parse({
+            version: 1,
+            groups: [
+                { id: "a", refs: ["R1"], review: "correct" },
+                { id: "b", refs: ["R2"], review: "maybe" },
+            ],
+        });
+        const events: string[] = [];
+        set.addEventListener(SymbolGroupSet.review_event, (e) => {
+            events.push((e as CustomEvent).detail.id);
+        });
+
+        assert.equal(set.by_id("a")!.review, "correct");
+        assert.isUndefined(set.by_id("b")!.review);
+        assert.isFalse(set.all_reviewed);
+
+        set.set_review("b", "wrong");
+        set.set_review("b", "wrong"); // unchanged, no event
+        set.set_review("a", null);
+        set.set_review("unknown", "correct"); // ignored
+
+        assert.deepEqual(events, ["b", "a"]);
+        assert.equal(set.by_id("b")!.review, "wrong");
+        assert.isUndefined(set.by_id("a")!.review);
+    });
+
+    test("to_json keeps the document and updates reviews", function () {
+        const set = SymbolGroupSet.parse(JSON.stringify(example));
+        set.set_review("amp#1", "correct");
+
+        let json = set.to_json() as any;
+        assert.equal(json.title, "hier");
+        assert.equal(json.selected, "amp#2");
+        assert.isFalse(json.reviewed);
+        assert.deepEqual(json.parts, example.parts);
+        assert.deepEqual(json.groups[0], {
+            ...example.groups[0],
+            review: "correct",
+        });
+        assert.deepEqual(json.groups[1], example.groups[1]);
+
+        for (const group of set.groups) {
+            set.set_review(group.id, "wrong");
+        }
+        json = set.to_json();
+        assert.isTrue(json.reviewed);
+        assert.equal(json.groups[0].review, "wrong");
+
+        // The set itself isn't changed by exporting.
+        assert.isFalse(set.reviewed);
+        assert.deepEqual(json.groups[0].nets, ["GND"]);
+    });
+
+    test("to_json of added groups", function () {
+        const set = new SymbolGroupSet();
+        set.title = "t";
+        set.add({
+            id: "g",
+            refs: parse_refs("R1 U1.A"),
+            label: "g",
+            description: "one\ntwo",
+            pages: [],
+            missing: [],
+        });
+        set.set_review("g", "correct");
+
+        assert.deepEqual(set.to_json(), {
+            version: 1,
+            title: "t",
+            reviewed: true,
+            groups: [
+                {
+                    id: "g",
+                    refs: ["R1", "U1.A"],
+                    description: ["one", "two"],
+                    review: "correct",
+                },
+            ],
+        });
     });
 
     test("add", function () {

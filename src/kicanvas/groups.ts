@@ -35,15 +35,19 @@ const log = new Logger("kicanvas:groups");
  *      "status": "ambiguous",          // optional
  *      "parent": "push_pull#1",        // optional, id of the parent group
  *      "description": "...",           // optional, string or list of strings
- *      "color": "#e377c2"              // optional, CSS color
+ *      "color": "#e377c2",             // optional, CSS color
+ *      "review": "correct"             // optional, "correct" or "wrong"
  *    }],
  *    "parts": {                        // optional, info about symbols
  *      "C2": { "kind": "capacitor_polarized", "value": "47uF" }
  *    }
  *  }
  *
- * Unknown fields are ignored.
+ * Unknown fields are ignored, and kept by SymbolGroupSet.to_json().
  */
+
+/** A reviewer's verdict on a group. */
+export type Review = "correct" | "wrong";
 
 export interface SymbolGroup {
     id: string;
@@ -54,6 +58,7 @@ export interface SymbolGroup {
     parent?: string;
     description?: string;
     color?: string;
+    review?: Review;
     /** Pages with symbols of this group, set by SymbolGroupSet.resolve(). */
     pages: ResolvedPage[];
     /** References that weren't found, set by SymbolGroupSet.resolve(). */
@@ -78,6 +83,9 @@ export class SymbolGroupSet extends EventTarget {
     /** Fired when the selected group changes, detail is the group or null. */
     static readonly select_event = "kicanvas:groups:select";
 
+    /** Fired when a group's review changes, detail is the group. */
+    static readonly review_event = "kicanvas:groups:review";
+
     title?: string;
     source?: string;
     reviewed?: boolean;
@@ -86,6 +94,10 @@ export class SymbolGroupSet extends EventTarget {
 
     #by_id: Map<string, SymbolGroup> = new Map();
     #selected?: string;
+
+    /** The parsed document and its groups, kept for to_json(). */
+    #source?: Record<string, unknown>;
+    #source_groups: Map<string, Record<string, unknown>> = new Map();
 
     /**
      * Parses symbol groups from JSON text or an already parsed object.
@@ -110,6 +122,7 @@ export class SymbolGroupSet extends EventTarget {
         }
 
         const set = new SymbolGroupSet();
+        set.#source = structuredClone(data);
         set.title = opt_string(data["title"]);
         set.source = opt_string(data["source"]);
         set.reviewed =
@@ -123,7 +136,12 @@ export class SymbolGroupSet extends EventTarget {
             if (!group) {
                 continue;
             }
-            set.add(group);
+            if (set.add(group)) {
+                set.#source_groups.set(
+                    group.id,
+                    structuredClone(item as Record<string, unknown>),
+                );
+            }
         }
 
         for (const group of set.groups) {
@@ -219,6 +237,62 @@ export class SymbolGroupSet extends EventTarget {
                 detail: this.selected_group ?? null,
             }),
         );
+    }
+
+    /** Sets or clears the review of a group. */
+    set_review(id: string, review: Review | null) {
+        const group = this.#by_id.get(id);
+        if (!group || group.review === (review ?? undefined)) {
+            return;
+        }
+
+        group.review = review ?? undefined;
+        this.dispatchEvent(
+            new CustomEvent(SymbolGroupSet.review_event, { detail: group }),
+        );
+    }
+
+    /** True if every group has a review. */
+    get all_reviewed(): boolean {
+        return this.groups.every((g) => g.review !== undefined);
+    }
+
+    /**
+     * The groups as a JSON v1 object, for exporting reviews. Parsed groups
+     * are written as they were read, including unknown fields, with only
+     * their review updated. Invalid groups are left out. The document is
+     * marked as reviewed once every group has a review.
+     */
+    to_json(): Record<string, unknown> {
+        const data: Record<string, unknown> = this.#source
+            ? structuredClone(this.#source)
+            : omit_undefined({
+                  version: 1,
+                  title: this.title,
+                  source: this.source,
+                  reviewed: this.reviewed,
+                  parts: this.parts.size
+                      ? Object.fromEntries(this.parts)
+                      : undefined,
+              });
+
+        data["groups"] = this.groups.map((group) => {
+            const item = structuredClone(
+                this.#source_groups.get(group.id) ?? group_to_json(group),
+            );
+            if (group.review) {
+                item["review"] = group.review;
+            } else {
+                delete item["review"];
+            }
+            return item;
+        });
+
+        if (this.groups.length && this.all_reviewed) {
+            data["reviewed"] = true;
+        }
+
+        return data;
     }
 
     by_id(id: string): SymbolGroup | undefined {
@@ -334,9 +408,40 @@ function parse_group(item: unknown, index: number): SymbolGroup | null {
         parent: opt_string(item["parent"]),
         description: opt_string(description) || undefined,
         color: opt_string(item["color"]),
+        review: parse_review(item["review"], id),
         pages: [],
         missing: [],
     };
+}
+
+function parse_review(value: unknown, id: string): Review | undefined {
+    if (value === undefined) {
+        return undefined;
+    }
+    if (value === "correct" || value === "wrong") {
+        return value;
+    }
+    log.warn(`Symbol group "${id}" has unknown review ${value}, ignored`);
+    return undefined;
+}
+
+function group_to_json(group: SymbolGroup): Record<string, unknown> {
+    return omit_undefined({
+        id: group.id,
+        refs: group.refs.map((r) => r.text),
+        label: group.label == group.id ? undefined : group.label,
+        kind: group.kind,
+        status: group.status,
+        parent: group.parent,
+        description: group.description?.split("\n"),
+        color: group.color,
+    });
+}
+
+function omit_undefined(object: Record<string, unknown>) {
+    return Object.fromEntries(
+        Object.entries(object).filter(([, value]) => value !== undefined),
+    );
 }
 
 function is_object(value: unknown): value is Record<string, unknown> {

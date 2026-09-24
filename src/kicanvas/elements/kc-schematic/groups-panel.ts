@@ -8,6 +8,7 @@ import { later } from "../../../base/async";
 import { listen } from "../../../base/events";
 import { css, html, query } from "../../../base/web-components";
 import {
+    KCUIButtonElement,
     KCUIElement,
     KCUIFilteredListElement,
     KCUITextFilterInputElement,
@@ -31,6 +32,9 @@ import { ref_matches, resolve_refs } from "../../refs";
  * The selected group is shown with its details: kind, status, description,
  * related groups and parts. Selecting a part selects its symbol, switching
  * to the sheet it's on if needed.
+ *
+ * Groups can be reviewed as correct or wrong, and the reviews exported as
+ * JSON in the same format.
  *
  * When a symbol is selected in the viewer, the groups it belongs to are
  * listed above the other groups.
@@ -59,6 +63,21 @@ export class KCSchematicGroupsPanelElement extends KCUIElement {
 
             .details {
                 margin-bottom: 0.5em;
+            }
+
+            .review {
+                display: flex;
+                gap: 0.5em;
+                margin: 0.25em 0.2em;
+            }
+
+            .review kc-ui-button {
+                flex: 1 1 50%;
+            }
+
+            .review kc-ui-button[selected]::part(base) {
+                background: var(--list-item-active-bg);
+                color: var(--list-item-active-fg);
             }
 
             .details p {
@@ -103,6 +122,9 @@ export class KCSchematicGroupsPanelElement extends KCUIElement {
 
     /** Symbol uuid to select once the sheet being switched to is loaded. */
     #pending_symbol: string | null = null;
+
+    /** True if reviews changed since they were last exported. */
+    #unexported = false;
 
     override connectedCallback() {
         (async () => {
@@ -168,10 +190,39 @@ export class KCSchematicGroupsPanelElement extends KCUIElement {
             }),
         );
 
+        this.addDisposable(
+            listen(this.groups, SymbolGroupSet.review_event, (e) => {
+                this.#unexported = true;
+                this.#update_review((e as CustomEvent).detail as SymbolGroup);
+            }),
+        );
+
+        // Warn before leaving the page with reviews that weren't exported.
+        this.addDisposable(
+            listen(window, "beforeunload", (e) => {
+                if (this.#unexported) {
+                    e.preventDefault();
+                }
+            }),
+        );
+
         this.renderRoot.addEventListener("click", (e) => {
-            const button = (e.target as HTMLElement).closest("button");
-            if (button?.name == "clear") {
+            const button = (e.target as HTMLElement).closest(
+                "button, kc-ui-button",
+            );
+            const name = button?.getAttribute("name");
+            const group = this.groups.selected_group;
+
+            if (name == "clear") {
                 this.groups.select(null);
+            } else if (name == "export") {
+                this.#export();
+            } else if (group && (name == "correct" || name == "wrong")) {
+                // Selecting the current review again clears it.
+                this.groups.set_review(
+                    group.id,
+                    group.review == name ? null : name,
+                );
             }
         });
     }
@@ -325,8 +376,25 @@ export class KCSchematicGroupsPanelElement extends KCUIElement {
             }
         });
 
+        const review_buttons = (
+            [
+                ["correct", "✓ Correct"],
+                ["wrong", "✗ Wrong"],
+            ] as const
+        ).map(([review, text]) => {
+            const button = html`<kc-ui-button
+                name="${review}"
+                variant="outline"
+                title="Mark as ${review}, again to clear">
+                ${text}
+            </kc-ui-button>` as KCUIButtonElement;
+            button.selected = group.review == review;
+            return button;
+        });
+
         this.details_elm.replaceChildren(
             html`<kc-ui-panel-label>${group.label}</kc-ui-panel-label>`,
+            html`<div class="review">${review_buttons}</div>`,
             ...(properties.length
                 ? [
                       html`<kc-ui-property-list
@@ -394,15 +462,76 @@ export class KCSchematicGroupsPanelElement extends KCUIElement {
         this.#sync_selected();
     }
 
-    #entry(group: SymbolGroup, depth: number): HTMLElement[] {
+    /** Downloads the groups with their reviews as JSON. */
+    #export() {
+        const json = JSON.stringify(this.groups.to_json(), null, 2) + "\n";
+        const name = (this.groups.title ?? "groups").replace(
+            /[\\/:*?"<>|]/g,
+            "_",
+        );
+
+        const url = URL.createObjectURL(
+            new Blob([json], { type: "application/json" }),
+        );
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `${name}.groups.json`;
+        link.click();
+        window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+        this.#unexported = false;
+    }
+
+    /** Shows a changed review in the list, the details and the progress. */
+    #update_review(group: SymbolGroup) {
+        const marks = this.menu.item_by_name(group.id)?.querySelector(".marks");
+        if (marks) {
+            marks.textContent = this.#marks(group);
+        }
+
+        const info = this.renderRoot.querySelector(".info");
+        if (info) {
+            info.textContent = this.#info();
+        }
+
+        if (group.id == this.groups.selected) {
+            this.#render_details();
+        }
+    }
+
+    #marks(group: SymbolGroup) {
         const marks = [];
+        if (group.review == "correct") {
+            marks.push("✓");
+        }
+        if (group.review == "wrong") {
+            marks.push("✗");
+        }
         if (group.status == "ambiguous") {
             marks.push("?");
         }
         if (group.missing.length) {
             marks.push("!");
         }
+        return marks.join(" ");
+    }
 
+    /** Title, source and review progress of the groups. */
+    #info() {
+        const reviewed = this.groups.groups.filter(
+            (g) => g.review !== undefined,
+        ).length;
+
+        return [
+            this.groups.title,
+            this.groups.source,
+            `${reviewed}/${this.groups.groups.length} reviewed`,
+        ]
+            .filter((t) => t)
+            .join(" · ");
+    }
+
+    #entry(group: SymbolGroup, depth: number): HTMLElement[] {
         const sheets = group.pages
             .map(({ page }) => page.name ?? page.filename)
             .join(", ");
@@ -411,6 +540,7 @@ export class KCSchematicGroupsPanelElement extends KCUIElement {
             sheets ? `on ${sheets}` : "not found",
             group.missing.length ? `missing: ${group.missing.join(" ")}` : null,
             group.status == "ambiguous" ? "ambiguous" : null,
+            group.review ? `reviewed: ${group.review}` : null,
         ]
             .filter((t) => t)
             .join("\n");
@@ -429,7 +559,7 @@ export class KCSchematicGroupsPanelElement extends KCUIElement {
             <span style="padding-left: ${depth * 1.2}em">
                 ${depth ? "└ " : ""}${group.label}
             </span>
-            <span class="marks">${marks.join(" ")}</span>
+            <span class="marks">${this.#marks(group)}</span>
         </kc-ui-menu-item>` as HTMLElement;
 
         return [
@@ -459,18 +589,6 @@ export class KCSchematicGroupsPanelElement extends KCUIElement {
             }
         }
 
-        const info = [
-            this.groups.title,
-            this.groups.source,
-            this.groups.reviewed === undefined
-                ? null
-                : this.groups.reviewed
-                  ? "reviewed"
-                  : "not reviewed",
-        ]
-            .filter((t) => t)
-            .join(" · ");
-
         return html`
             <kc-ui-panel>
                 <kc-ui-panel-title title="Subcircuits">
@@ -481,11 +599,18 @@ export class KCSchematicGroupsPanelElement extends KCUIElement {
                         title="Clear selection">
                         <kc-ui-icon>deselect</kc-ui-icon>
                     </button>
+                    <button
+                        slot="actions"
+                        type="button"
+                        name="export"
+                        title="Export reviews as JSON">
+                        <kc-ui-icon>download</kc-ui-icon>
+                    </button>
                 </kc-ui-panel-title>
                 <kc-ui-panel-body>
-                    ${info
-                        ? html`<kc-ui-panel-label>${info}</kc-ui-panel-label>`
-                        : null}
+                    <kc-ui-panel-label class="info"
+                        >${this.#info()}</kc-ui-panel-label
+                    >
                     <div class="details"></div>
                     <div class="part-groups"></div>
                     <kc-ui-text-filter-input></kc-ui-text-filter-input>

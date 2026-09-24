@@ -18,6 +18,7 @@ import {
 import type { ProjectPage } from "../../kicanvas/project";
 import { ref_matches, type RefQuery } from "../../kicanvas/refs";
 import { DocumentViewer } from "../base/document-viewer";
+import type { HighlightGroup } from "../base/highlights";
 import { LayerSet } from "./layers";
 import { SchematicPainter } from "./painter";
 
@@ -31,6 +32,9 @@ export class SchematicViewer extends DocumentViewer<
         return this.document;
     }
 
+    /** Project path of the page being shown, if loaded from a project. */
+    #page_path: string | null = null;
+
     override create_renderer(canvas: HTMLCanvasElement): Renderer {
         const renderer = new Canvas2DRenderer(canvas);
         renderer.state.fill = this.theme.note;
@@ -41,10 +45,12 @@ export class SchematicViewer extends DocumentViewer<
 
     override async load(src: KicadSch | ProjectPage) {
         if (src instanceof KicadSch) {
+            this.#page_path = null;
             return await super.load(src);
         }
 
         this.document = null!;
+        this.#page_path = src.project_path;
 
         const doc = src.document as KicadSch;
         doc.update_hierarchical_data(src.sheet_path);
@@ -63,6 +69,11 @@ export class SchematicViewer extends DocumentViewer<
     protected override find_refs_bboxes(refs: RefQuery[]): BBox[] {
         const bboxes: BBox[] = [];
 
+        // Nothing to find while a page is being loaded.
+        if (!this.schematic) {
+            return bboxes;
+        }
+
         // Symbol references and units have already been updated for the
         // sheet instance being shown by load().
         for (const symbol of this.schematic.symbols.values()) {
@@ -74,6 +85,19 @@ export class SchematicViewer extends DocumentViewer<
         }
 
         return bboxes;
+    }
+
+    protected override highlight_label(group: HighlightGroup): string {
+        const elsewhere = (group.pages ?? []).filter(
+            (p) => p.path != this.#page_path,
+        );
+
+        if (!this.#page_path || !elsewhere.length) {
+            return group.label;
+        }
+
+        const notes = elsewhere.map((p) => `+${p.count} on ${p.name}`);
+        return `${group.label} (${notes.join(", ")})`;
     }
 
     public override select(

@@ -268,6 +268,13 @@ export abstract class Viewer extends EventTarget {
         return [];
     }
 
+    /**
+     * The label drawn for a highlight group on the current page.
+     */
+    protected highlight_label(group: HighlightGroup): string {
+        return group.label;
+    }
+
     protected paint_highlights() {
         const layer = this.layers.highlights;
 
@@ -284,7 +291,12 @@ export abstract class Viewer extends EventTarget {
 
             // Groups whose items are on another page aren't drawn.
             if (bboxes.length) {
-                paint_highlight(this.renderer, BBox.combine(bboxes), group);
+                paint_highlight(
+                    this.renderer,
+                    bboxes,
+                    group,
+                    this.highlight_label(group),
+                );
             }
         }
 

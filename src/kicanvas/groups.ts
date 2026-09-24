@@ -65,16 +65,18 @@ export interface PartInfo {
     value?: string;
 }
 
-export class SymbolGroupSet {
+export class SymbolGroupSet extends EventTarget {
+    /** Fired when the selected group changes, detail is the group or null. */
+    static readonly select_event = "kicanvas:groups:select";
+
     title?: string;
     source?: string;
     reviewed?: boolean;
-    /** Id of the group to select when loaded. */
-    selected?: string;
     groups: SymbolGroup[] = [];
     parts: Map<string, PartInfo> = new Map();
 
     #by_id: Map<string, SymbolGroup> = new Map();
+    #selected?: string;
 
     /**
      * Parses symbol groups from JSON text or an already parsed object.
@@ -105,19 +107,14 @@ export class SymbolGroupSet {
             typeof data["reviewed"] === "boolean"
                 ? data["reviewed"]
                 : undefined;
-        set.selected = opt_string(data["selected"]);
+        const selected = opt_string(data["selected"]);
 
         for (const [index, item] of data["groups"].entries()) {
             const group = parse_group(item, index);
             if (!group) {
                 continue;
             }
-            if (set.#by_id.has(group.id)) {
-                log.warn(`Duplicate symbol group id "${group.id}", skipped`);
-                continue;
-            }
-            set.groups.push(group);
-            set.#by_id.set(group.id, group);
+            set.add(group);
         }
 
         for (const group of set.groups) {
@@ -129,10 +126,7 @@ export class SymbolGroupSet {
             }
         }
 
-        if (set.selected !== undefined && !set.#by_id.has(set.selected)) {
-            log.warn(`Selected symbol group "${set.selected}" doesn't exist`);
-            set.selected = undefined;
-        }
+        set.select(selected);
 
         if (is_object(data["parts"])) {
             for (const [ref, info] of Object.entries(data["parts"])) {
@@ -146,6 +140,58 @@ export class SymbolGroupSet {
         }
 
         return set;
+    }
+
+    /**
+     * Adds a group, unless a group with the same id exists.
+     * @returns true if the group was added.
+     */
+    add(group: SymbolGroup): boolean {
+        if (this.#by_id.has(group.id)) {
+            log.warn(`Duplicate symbol group id "${group.id}", skipped`);
+            return false;
+        }
+        this.groups.push(group);
+        this.#by_id.set(group.id, group);
+        return true;
+    }
+
+    /** Id of the selected group. */
+    get selected(): string | undefined {
+        return this.#selected;
+    }
+
+    get selected_group(): SymbolGroup | undefined {
+        return this.#selected === undefined
+            ? undefined
+            : this.#by_id.get(this.#selected);
+    }
+
+    /**
+     * Selects a group by id, or clears the selection. Only one group can be
+     * selected at a time.
+     */
+    select(id: string | null | undefined) {
+        let next: string | undefined = undefined;
+
+        if (id !== null && id !== undefined) {
+            if (this.#by_id.has(id)) {
+                next = id;
+            } else {
+                log.warn(`Symbol group "${id}" doesn't exist`);
+            }
+        }
+
+        if (next === this.#selected) {
+            return;
+        }
+
+        this.#selected = next;
+        this.dispatchEvent(
+            new CustomEvent(SymbolGroupSet.select_event, {
+                detail: this.selected_group ?? null,
+            }),
+        );
     }
 
     by_id(id: string): SymbolGroup | undefined {

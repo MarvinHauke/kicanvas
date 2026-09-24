@@ -154,4 +154,37 @@ suite("kicanvas.groups", function () {
         assert.deepEqual(set.by_id("missing#1")!.missing, ["R999"]);
         assert.deepEqual(set.by_id("amp#1")!.missing, []);
     });
+
+    test("selection", function () {
+        const set = SymbolGroupSet.parse(example);
+        const events: (string | null)[] = [];
+        set.addEventListener(SymbolGroupSet.select_event, (e) => {
+            events.push((e as CustomEvent).detail?.id ?? null);
+        });
+
+        assert.equal(set.selected, "amp#2");
+        assert.equal(set.selected_group?.id, "amp#2");
+
+        set.select("amp#1");
+        set.select("amp#1"); // unchanged, no event
+        set.select("unknown"); // clears the selection
+        set.select(null); // unchanged, no event
+
+        assert.deepEqual(events, ["amp#1", null]);
+        assert.isUndefined(set.selected_group);
+    });
+
+    test("add", function () {
+        const set = new SymbolGroupSet();
+        const group = {
+            id: "g",
+            refs: [],
+            label: "g",
+            pages: [],
+            missing: [],
+        };
+        assert.isTrue(set.add(group));
+        assert.isFalse(set.add({ ...group }));
+        assert.equal(set.groups.length, 1);
+    });
 });

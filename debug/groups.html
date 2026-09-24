@@ -33,6 +33,33 @@
                     }
                 </kicanvas-groups>
             </kicanvas-embed>
+
+            <p>
+                Symbol groups on a real schematic. Only the selected group is
+                drawn; select others with
+                document.getElementById("helium").groups.select("id").
+            </p>
+            <kicanvas-embed id="helium" controls="full">
+                <kicanvas-source src="examples/helium.kicad_sch">
+                </kicanvas-source>
+                <!-- prettier-ignore -->
+                <kicanvas-groups>
+                    {
+                        "version": 1,
+                        "selected": "buffer#1",
+                        "groups": [
+                            {"id": "buffer#1", "refs": ["U1.A", "R1"], "kind": "buffer",
+                             "description": "unit A is at the bottom of the column, R1 at the top"},
+                            {"id": "power_filter#1", "refs": ["FB1", "D1", "FB2", "D2", "C1", "C2"],
+                             "kind": "power_filter", "status": "ambiguous"},
+                            {"id": "decoupling#1", "refs": ["C3", "C4", "C7", "C8", "C9", "C10"],
+                             "kind": "decoupling"},
+                            {"id": "led_driver#1", "refs": ["D3", "D4", "R9", "R999"],
+                             "kind": "led_driver"}
+                        ]
+                    }
+                </kicanvas-groups>
+            </kicanvas-embed>
         </main>
     </body>
 

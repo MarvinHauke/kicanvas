@@ -17,10 +17,10 @@ import {
 import { KCUIElement } from "../../kc-ui";
 import kc_ui_styles from "../../kc-ui/kc-ui.css";
 import type { HighlightGroup } from "../../viewers/base/highlights";
-import { SymbolGroupSet } from "../groups";
+import { SymbolGroupSet, type SymbolGroup } from "../groups";
 import { group_color, parse_flag } from "../highlights";
 import { Project } from "../project";
-import { parse_refs, resolve_refs } from "../refs";
+import { parse_refs } from "../refs";
 import {
     FetchFileSystem,
     LocalFileSystem,
@@ -182,16 +182,24 @@ class KiCanvasEmbedElement extends KCUIElement {
             await this.#project.load(vfs);
 
             this.#groups = await this.#load_groups();
+            this.#add_highlight_elements();
             this.#groups?.resolve(this.#project);
 
             this.loaded = true;
             await this.update();
 
-            if (this.#schematic_app) {
-                this.#schematic_app.highlights = this.#load_highlights();
+            if (this.#groups) {
+                this.#groups.addEventListener(SymbolGroupSet.select_event, () =>
+                    this.#show_selected_group(),
+                );
+                this.#show_selected_group();
             }
 
-            this.#project.set_active_page(this.#project.root_schematic_page!);
+            if (!this.#project.active_page) {
+                this.#project.set_active_page(
+                    this.#project.root_schematic_page!,
+                );
+            }
         } finally {
             this.loading = false;
         }
@@ -239,41 +247,92 @@ class KiCanvasEmbedElement extends KCUIElement {
     }
 
     /**
-     * Reads the kicanvas-highlight children into highlight groups.
+     * Adds kicanvas-highlight children as symbol groups.
      */
-    #load_highlights(): HighlightGroup[] {
-        const groups: HighlightGroup[] = [];
+    #add_highlight_elements() {
+        const elms =
+            this.querySelectorAll<KiCanvasHighlightElement>(
+                "kicanvas-highlight",
+            );
 
-        for (const elm of this.querySelectorAll<KiCanvasHighlightElement>(
-            "kicanvas-highlight",
-        )) {
+        if (!elms.length) {
+            return;
+        }
+
+        this.#groups ??= new SymbolGroupSet();
+
+        let selected: string | undefined;
+
+        for (const elm of elms) {
             const refs = parse_refs(elm.refs ?? "");
-            let label = elm.label ?? elm.refs ?? "";
+            const id = elm.label || elm.refs || "";
 
             if (!refs.length) {
-                log.warn(`kicanvas-highlight "${label}" has no refs`);
+                log.warn(`kicanvas-highlight "${id}" has no refs`);
                 continue;
             }
 
-            const { missing } = resolve_refs(this.#project, refs);
-            if (missing.length) {
-                log.warn(
-                    `kicanvas-highlight "${label}": references not found: ${missing.join(" ")}`,
-                );
-                label += " (incomplete)";
-            }
-
-            groups.push({
+            const added = this.#groups.add({
+                id,
                 refs,
-                label,
-                color: elm.color
-                    ? Color.from_css(elm.color)
-                    : group_color(elm.group ?? label),
-                ambiguous: parse_flag(elm.ambiguous),
+                label: id,
+                kind: elm.group ?? undefined,
+                status: parse_flag(elm.ambiguous) ? "ambiguous" : undefined,
+                description: elm.title || undefined,
+                color: elm.color ?? undefined,
+                pages: [],
+                missing: [],
             });
+
+            if (added && parse_flag(elm.selected)) {
+                selected = id;
+            }
         }
 
-        return groups;
+        if (selected !== undefined) {
+            this.#groups.select(selected);
+        }
+    }
+
+    /**
+     * Shows the selected symbol group: switches to a page that has its
+     * symbols, unless the current page has some, and highlights it.
+     */
+    #show_selected_group() {
+        const group = this.#groups?.selected_group;
+
+        if (this.#schematic_app) {
+            this.#schematic_app.highlights = group
+                ? [this.#highlight_for(group)]
+                : [];
+        }
+
+        if (!group?.pages.length) {
+            return;
+        }
+
+        const active = this.#project.active_page;
+        if (!group.pages.some((p) => p.page === active)) {
+            this.#project.set_active_page(group.pages[0]!.page);
+        }
+    }
+
+    #highlight_for(group: SymbolGroup): HighlightGroup {
+        return {
+            refs: group.refs,
+            label: group.missing.length
+                ? `${group.label} (incomplete)`
+                : group.label,
+            color: group.color
+                ? Color.from_css(group.color)
+                : group_color(group.kind ?? group.id),
+            ambiguous: group.status == "ambiguous",
+            pages: group.pages.map(({ page, symbols }) => ({
+                path: page.project_path,
+                name: page.name ?? page.filename,
+                count: symbols.length,
+            })),
+        };
     }
 
     override render() {
@@ -424,10 +483,12 @@ class KiCanvasSourceElement extends CustomElement {
 window.customElements.define("kicanvas-source", KiCanvasSourceElement);
 
 /**
- * kicanvas-highlight tag, draws a colored box around a group of symbols.
+ * kicanvas-highlight tag, a symbol group given by attributes, for pages
+ * written by hand. Like groups from kicanvas-groups, it's only drawn when
+ * selected.
  *
  * <kicanvas-highlight refs="R1 R2 U1.A" label="#1 voltage_divider"
- *     group="voltage_divider" ambiguous></kicanvas-highlight>
+ *     group="voltage_divider" ambiguous selected></kicanvas-highlight>
  */
 class KiCanvasHighlightElement extends CustomElement {
     override connectedCallback() {
@@ -455,6 +516,10 @@ class KiCanvasHighlightElement extends CustomElement {
     /** Draws a dashed outline. Present or "true" means true. */
     @attribute({ type: String })
     ambiguous: string | null;
+
+    /** Selects this group when loaded. Present or "true" means true. */
+    @attribute({ type: String })
+    selected: string | null;
 }
 
 window.customElements.define("kicanvas-highlight", KiCanvasHighlightElement);

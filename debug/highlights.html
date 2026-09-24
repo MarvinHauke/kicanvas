@@ -16,7 +16,8 @@
                 <kicanvas-highlight
                     refs="U1.A R1"
                     label="#1 buffer"
-                    group="buffer"></kicanvas-highlight>
+                    group="buffer"
+                    selected></kicanvas-highlight>
                 <kicanvas-highlight
                     refs="U2.A R5"
                     label="#2 buffer"
@@ -39,9 +40,8 @@
             </kicanvas-embed>
 
             <p>
-                Reused sheet: open "amp_left" and "amp_right" from the Project
-                panel. amp_left shows #1 (R1 U1), amp_right shows #2 (R11
-                U11.B).
+                Reused sheet: #2 (R11 U11.B) is selected, so the "amp_right"
+                sheet is shown first.
             </p>
             <kicanvas-embed controls="full">
                 <kicanvas-source src="examples/hier/root.kicad_sch">
@@ -56,7 +56,8 @@
                     refs="R11 U11.B"
                     label="#2 right"
                     group="right"
-                    ambiguous></kicanvas-highlight>
+                    ambiguous
+                    selected></kicanvas-highlight>
             </kicanvas-embed>
         </main>
     </body>

@@ -1,0 +1,65 @@
+<!doctype html>
+<html>
+    <head>
+        <link rel="stylesheet" href="./embedded-style.css" />
+    </head>
+
+    <body>
+        <main>
+            <p>
+                Highlight groups. #1 and #2 share a group, so they have the same
+                color. #3 is ambiguous (dashed). #4 has an unknown reference and
+                is marked "(incomplete)". #5 has a fixed color and
+                ambiguous="false" (solid).
+            </p>
+            <kicanvas-embed src="examples/helium.kicad_sch" controls="full">
+                <kicanvas-highlight
+                    refs="U1.A R1"
+                    label="#1 buffer"
+                    group="buffer"></kicanvas-highlight>
+                <kicanvas-highlight
+                    refs="U2.A R5"
+                    label="#2 buffer"
+                    group="buffer"></kicanvas-highlight>
+                <kicanvas-highlight
+                    refs="FB1 D1 FB2 D2 C1 C2"
+                    label="#3 power_filter"
+                    group="power_filter"
+                    ambiguous></kicanvas-highlight>
+                <kicanvas-highlight
+                    refs="D3 D4 R9 R999"
+                    label="#4 led_driver"
+                    group="led_driver"></kicanvas-highlight>
+                <kicanvas-highlight
+                    refs="U4.B R13"
+                    label="#5 inverting_amp"
+                    group="inverting_amp"
+                    color="#e377c2"
+                    ambiguous="false"></kicanvas-highlight>
+            </kicanvas-embed>
+
+            <p>
+                Reused sheet: open "amp_left" and "amp_right" from the Project
+                panel. amp_left shows #1 (R1 U1), amp_right shows #2 (R11
+                U11.B).
+            </p>
+            <kicanvas-embed controls="full">
+                <kicanvas-source src="examples/hier/root.kicad_sch">
+                </kicanvas-source>
+                <kicanvas-source src="examples/hier/amp.kicad_sch">
+                </kicanvas-source>
+                <kicanvas-highlight
+                    refs="R1 U1"
+                    label="#1 left"
+                    group="left"></kicanvas-highlight>
+                <kicanvas-highlight
+                    refs="R11 U11.B"
+                    label="#2 right"
+                    group="right"
+                    ambiguous></kicanvas-highlight>
+            </kicanvas-embed>
+        </main>
+    </body>
+
+    <script type="module" src="./kicanvas/kicanvas.js"></script>
+</html>

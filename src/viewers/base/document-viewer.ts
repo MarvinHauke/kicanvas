@@ -128,6 +128,9 @@ export abstract class DocumentViewer<
             this.theme.grid,
             this.theme.grid_axes,
         );
+
+        // Layers are re-created above, so highlights need to be re-painted.
+        this.paint_highlights();
     }
 
     public override zoom_to_page() {

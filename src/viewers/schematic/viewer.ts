@@ -16,6 +16,7 @@ import {
     SchematicSymbol,
 } from "../../kicad/schematic";
 import type { ProjectPage } from "../../kicanvas/project";
+import { ref_matches, type RefQuery } from "../../kicanvas/refs";
 import { DocumentViewer } from "../base/document-viewer";
 import { LayerSet } from "./layers";
 import { SchematicPainter } from "./painter";
@@ -57,6 +58,22 @@ export class SchematicViewer extends DocumentViewer<
 
     protected override create_layer_set() {
         return new LayerSet(this.theme);
+    }
+
+    protected override find_refs_bboxes(refs: RefQuery[]): BBox[] {
+        const bboxes: BBox[] = [];
+
+        // Symbol references and units have already been updated for the
+        // sheet instance being shown by load().
+        for (const symbol of this.schematic.symbols.values()) {
+            if (
+                refs.some((q) => ref_matches(q, symbol.reference, symbol.unit))
+            ) {
+                bboxes.push(...this.layers.query_item_bboxes(symbol));
+            }
+        }
+
+        return bboxes;
     }
 
     public override select(

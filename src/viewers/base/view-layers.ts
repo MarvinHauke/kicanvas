@@ -14,6 +14,7 @@ import { Color, RenderLayer } from "../../graphics";
  */
 export enum ViewLayerNames {
     overlay = ":Overlay",
+    highlights = ":Highlights",
     drawing_sheet = ":DrawingSheet",
     grid = ":Grid",
 }
@@ -141,6 +142,7 @@ export class ViewLayerSet implements IDisposable {
     #layer_list: ViewLayer[] = [];
     #layer_map: Map<string, ViewLayer> = new Map();
     #overlay: ViewLayer;
+    #highlights: ViewLayer;
 
     /**
      * Create a new LayerSet
@@ -153,6 +155,13 @@ export class ViewLayerSet implements IDisposable {
             false,
             Color.white,
         );
+        this.#highlights = new ViewLayer(
+            this,
+            ViewLayerNames.highlights,
+            true,
+            false,
+            Color.white,
+        );
     }
 
     /**
@@ -160,6 +169,7 @@ export class ViewLayerSet implements IDisposable {
      */
     dispose() {
         this.#overlay.dispose();
+        this.#highlights.dispose();
         for (const layer of this.#layer_list) {
             layer.dispose();
         }
@@ -210,6 +220,7 @@ export class ViewLayerSet implements IDisposable {
             }
         }
 
+        yield this.#highlights;
         yield this.#overlay;
     }
 
@@ -237,6 +248,15 @@ export class ViewLayerSet implements IDisposable {
      */
     get overlay() {
         return this.#overlay;
+    }
+
+    /**
+     * Gets the special highlights layer, used for highlight groups. It's drawn
+     * above all others except the overlay, so that selecting an item doesn't
+     * clear the highlights.
+     */
+    get highlights() {
+        return this.#highlights;
     }
 
     /**

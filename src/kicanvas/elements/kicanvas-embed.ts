@@ -5,6 +5,7 @@
 */
 
 import { later } from "../../base/async";
+import { Color } from "../../base/color";
 import { Logger } from "../../base/log";
 import {
     CSS,
@@ -15,7 +16,10 @@ import {
 } from "../../base/web-components";
 import { KCUIElement } from "../../kc-ui";
 import kc_ui_styles from "../../kc-ui/kc-ui.css";
+import type { HighlightGroup } from "../../viewers/base/highlights";
+import { group_color, parse_flag } from "../highlights";
 import { Project } from "../project";
+import { parse_refs, resolve_refs } from "../refs";
 import {
     FetchFileSystem,
     LocalFileSystem,
@@ -70,7 +74,6 @@ class KiCanvasEmbedElement extends KCUIElement {
     }
 
     #project: Project = new Project();
-
     @attribute({ type: String })
     src: string | null;
 
@@ -167,13 +170,56 @@ class KiCanvasEmbedElement extends KCUIElement {
             await vfs.setup();
             await this.#project.load(vfs);
 
+
             this.loaded = true;
             await this.update();
+
+            if (this.#schematic_app) {
+                this.#schematic_app.highlights = this.#load_highlights();
+            }
 
             this.#project.set_active_page(this.#project.root_schematic_page!);
         } finally {
             this.loading = false;
         }
+    }
+
+    /**
+     * Reads the kicanvas-highlight children into highlight groups.
+     */
+    #load_highlights(): HighlightGroup[] {
+        const groups: HighlightGroup[] = [];
+
+        for (const elm of this.querySelectorAll<KiCanvasHighlightElement>(
+            "kicanvas-highlight",
+        )) {
+            const refs = parse_refs(elm.refs ?? "");
+            let label = elm.label ?? elm.refs ?? "";
+
+            if (!refs.length) {
+                log.warn(`kicanvas-highlight "${label}" has no refs`);
+                continue;
+            }
+
+            const { missing } = resolve_refs(this.#project, refs);
+            if (missing.length) {
+                log.warn(
+                    `kicanvas-highlight "${label}": references not found: ${missing.join(" ")}`,
+                );
+                label += " (incomplete)";
+            }
+
+            groups.push({
+                refs,
+                label,
+                color: elm.color
+                    ? Color.from_css(elm.color)
+                    : group_color(elm.group ?? label),
+                ambiguous: parse_flag(elm.ambiguous),
+            });
+        }
+
+        return groups;
     }
 
     override render() {
@@ -322,6 +368,42 @@ class KiCanvasSourceElement extends CustomElement {
 }
 
 window.customElements.define("kicanvas-source", KiCanvasSourceElement);
+
+/**
+ * kicanvas-highlight tag, draws a colored box around a group of symbols.
+ *
+ * <kicanvas-highlight refs="R1 R2 U1.A" label="#1 voltage_divider"
+ *     group="voltage_divider" ambiguous></kicanvas-highlight>
+ */
+class KiCanvasHighlightElement extends CustomElement {
+    override connectedCallback() {
+        this.ariaHidden = "true";
+        this.hidden = true;
+        this.style.display = "none";
+        super.connectedCallback();
+    }
+
+    /** References, separated by spaces: "R1 R2 U1.A" */
+    @attribute({ type: String })
+    refs: string | null;
+
+    @attribute({ type: String })
+    label: string | null;
+
+    /** Groups with the same name get the same color. */
+    @attribute({ type: String })
+    group: string | null;
+
+    /** CSS color, overrides the group color. */
+    @attribute({ type: String })
+    color: string | null;
+
+    /** Draws a dashed outline. Present or "true" means true. */
+    @attribute({ type: String })
+    ambiguous: string | null;
+}
+
+window.customElements.define("kicanvas-highlight", KiCanvasHighlightElement);
 
 /* Import required fonts.
  * TODO: Package these up as part of KiCanvas

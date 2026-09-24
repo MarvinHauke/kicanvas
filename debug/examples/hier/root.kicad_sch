@@ -1,0 +1,68 @@
+(kicad_sch
+	(version 20231120)
+	(generator "eeschema")
+	(generator_version "8.0")
+	(uuid "00000000-0000-0000-0000-00000000000a")
+	(paper "A4")
+	(lib_symbols
+		(symbol "Device:R"
+			(property "Reference" "R" (at 0 0 0) (effects (font (size 1.27 1.27))))
+			(property "Value" "R" (at 0 0 0) (effects (font (size 1.27 1.27))))
+			(symbol "R_0_1"
+				(rectangle (start -1 2.5) (end 1 -2.5)
+					(stroke (width 0.254) (type default))
+					(fill (type none))
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Device:R")
+		(at 20 20 0)
+		(unit 1)
+		(uuid "00000000-0000-0000-0000-000000000100")
+		(property "Reference" "R100" (at 22 20 0) (effects (font (size 1.27 1.27))))
+		(property "Value" "10k" (at 22 22 0) (effects (font (size 1.27 1.27))))
+		(instances
+			(project "hier"
+				(path "/00000000-0000-0000-0000-00000000000a"
+					(reference "R100")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(sheet
+		(at 50 50)
+		(size 20 10)
+		(uuid "00000000-0000-0000-0000-00000000000b")
+		(property "Sheetname" "amp_left" (at 50 49 0) (effects (font (size 1.27 1.27))))
+		(property "Sheetfile" "amp.kicad_sch" (at 50 61 0) (effects (font (size 1.27 1.27))))
+		(instances
+			(project "hier"
+				(path "/00000000-0000-0000-0000-00000000000a"
+					(page "2")
+				)
+			)
+		)
+	)
+	(sheet
+		(at 100 50)
+		(size 20 10)
+		(uuid "00000000-0000-0000-0000-00000000000c")
+		(property "Sheetname" "amp_right" (at 100 49 0) (effects (font (size 1.27 1.27))))
+		(property "Sheetfile" "amp.kicad_sch" (at 100 61 0) (effects (font (size 1.27 1.27))))
+		(instances
+			(project "hier"
+				(path "/00000000-0000-0000-0000-00000000000a"
+					(page "3")
+				)
+			)
+		)
+	)
+	(sheet_instances
+		(path "/"
+			(page "1")
+		)
+	)
+)

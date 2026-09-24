@@ -10,12 +10,14 @@ import { listen } from "../../base/events";
 import { no_self_recursion } from "../../base/functions";
 import { BBox, Vec2 } from "../../base/math";
 import { Color, Polygon, Polyline, Renderer } from "../../graphics";
+import type { RefQuery } from "../../kicanvas/refs";
 import {
     KiCanvasLoadEvent,
     KiCanvasMouseMoveEvent,
     KiCanvasSelectEvent,
     type KiCanvasEventMap,
 } from "./events";
+import { paint_highlight, type HighlightGroup } from "./highlights";
 import { ViewLayerSet } from "./view-layers";
 import { Viewport } from "./viewport";
 
@@ -30,6 +32,7 @@ export abstract class Viewer extends EventTarget {
     protected setup_finished = new Barrier();
 
     #selected: BBox | null;
+    #highlights: HighlightGroup[] = [];
 
     constructor(
         public canvas: HTMLCanvasElement,
@@ -239,6 +242,53 @@ export abstract class Viewer extends EventTarget {
         }
 
         this.draw();
+    }
+
+    /**
+     * Groups of items drawn as colored boxes, independent of the selection.
+     */
+    public get highlights(): HighlightGroup[] {
+        return this.#highlights;
+    }
+
+    public set highlights(groups: HighlightGroup[]) {
+        this.#highlights = groups;
+
+        if (this.layers) {
+            this.paint_highlights();
+            this.draw();
+        }
+    }
+
+    /**
+     * @returns the bounding boxes of the items with the given references in
+     * the current document. Implemented by viewers that support highlights.
+     */
+    protected find_refs_bboxes(refs: RefQuery[]): BBox[] {
+        return [];
+    }
+
+    protected paint_highlights() {
+        const layer = this.layers.highlights;
+
+        layer.clear();
+
+        if (!this.#highlights.length) {
+            return;
+        }
+
+        this.renderer.start_layer(layer.name);
+
+        for (const group of this.#highlights) {
+            const bboxes = this.find_refs_bboxes(group.refs);
+
+            // Groups whose items are on another page aren't drawn.
+            if (bboxes.length) {
+                paint_highlight(this.renderer, BBox.combine(bboxes), group);
+            }
+        }
+
+        layer.graphics = this.renderer.end_layer();
     }
 
     abstract zoom_to_page(): void;

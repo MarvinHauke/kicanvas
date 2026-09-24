@@ -19,6 +19,7 @@ import {
     KCUIElement,
 } from "../../../kc-ui";
 import { KiCanvasSelectEvent } from "../../../viewers/base/events";
+import type { HighlightGroup } from "../../../viewers/base/highlights";
 import type { Viewer } from "../../../viewers/base/viewer";
 import type { Project, ProjectPage } from "../../project";
 import { KCBoardViewerElement } from "../kc-board/viewer";
@@ -45,6 +46,8 @@ export abstract class KCViewerAppElement<
     #activity_bar: KCUIActivitySideBarElement | null;
 
     project: Project;
+    #highlights: HighlightGroup[] = [];
+
     viewerReady: DeferredPromise<boolean> = new DeferredPromise<boolean>();
 
     constructor() {
@@ -54,6 +57,20 @@ export abstract class KCViewerAppElement<
 
     get viewer() {
         return this.#viewer_elm.viewer;
+    }
+
+    /**
+     * Highlight groups, passed on to the viewer.
+     */
+    get highlights() {
+        return this.#highlights;
+    }
+
+    set highlights(groups: HighlightGroup[]) {
+        this.#highlights = groups;
+        if (this.#viewer_elm?.viewer) {
+            this.viewer.highlights = groups;
+        }
     }
 
     @attribute({ type: String })
@@ -130,6 +147,7 @@ export abstract class KCViewerAppElement<
     async load(src: ProjectPage) {
         await this.viewerReady;
         if (this.can_load(src)) {
+            this.viewer.highlights = this.#highlights;
             await this.#viewer_elm.load(src);
             this.hidden = false;
         } else {

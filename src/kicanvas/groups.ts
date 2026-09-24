@@ -226,10 +226,19 @@ export class SymbolGroupSet extends EventTarget {
         return this.groups.filter((g) => g.parent === id);
     }
 
-    /** Groups that contain a symbol with the given reference. */
-    groups_with_ref(reference: string): SymbolGroup[] {
+    /**
+     * Groups that contain the symbol with the given reference and unit. If
+     * unit is undefined, groups with any unit of the symbol are included.
+     */
+    groups_with_symbol(reference: string, unit?: number): SymbolGroup[] {
         return this.groups.filter((g) =>
-            g.refs.some((q) => q.ref === reference),
+            g.refs.some(
+                (q) =>
+                    q.ref === reference &&
+                    (unit === undefined ||
+                        q.unit === undefined ||
+                        q.unit === unit),
+            ),
         );
     }
 

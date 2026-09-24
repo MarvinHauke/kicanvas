@@ -13,11 +13,20 @@ import {
     type KCUIMenuElement,
     type KCUIMenuItemElement,
 } from "../../../kc-ui";
+import { SchematicSymbol } from "../../../kicad/schematic";
+import {
+    KiCanvasLoadEvent,
+    KiCanvasSelectEvent,
+} from "../../../viewers/base/events";
+import type { SchematicViewer } from "../../../viewers/schematic/viewer";
 import { SymbolGroupSet, type SymbolGroup } from "../../groups";
 
 /**
  * Lists symbol groups, such as subcircuits, grouped by kind with nested
  * groups under their parent. Selecting an entry selects the group.
+ *
+ * When a symbol is selected in the viewer, the groups it belongs to are
+ * listed above the other groups.
  */
 export class KCSchematicGroupsPanelElement extends KCUIElement {
     static override styles = [
@@ -36,6 +45,10 @@ export class KCSchematicGroupsPanelElement extends KCUIElement {
                 cursor: pointer;
             }
 
+            .part-groups:empty {
+                display: none;
+            }
+
             .marks {
                 flex: 0 0 auto;
                 max-width: 4em;
@@ -46,9 +59,23 @@ export class KCSchematicGroupsPanelElement extends KCUIElement {
     ];
 
     groups: SymbolGroupSet;
+    viewer: SchematicViewer;
 
-    @query("kc-ui-menu")
+    @query("kc-ui-menu#groups")
     private menu!: KCUIMenuElement;
+
+    @query(".part-groups", true)
+    private part_groups_elm!: HTMLElement;
+
+    #part_symbol: SchematicSymbol | null = null;
+
+    override connectedCallback() {
+        (async () => {
+            this.viewer = await this.requestLazyContext("viewer");
+            await this.viewer.loaded;
+            super.connectedCallback();
+        })();
+    }
 
     @query("kc-ui-text-filter-input", true)
     private search_input_elm!: KCUITextFilterInputElement;
@@ -77,6 +104,23 @@ export class KCSchematicGroupsPanelElement extends KCUIElement {
             }),
         );
 
+        // Show the groups of the symbol selected in the viewer.
+        this.addDisposable(
+            this.viewer.addEventListener(KiCanvasSelectEvent.type, (e) => {
+                const item = e.detail.item;
+                this.#part_symbol =
+                    item instanceof SchematicSymbol ? item : null;
+                this.#render_part_groups();
+            }),
+        );
+
+        this.addDisposable(
+            this.viewer.addEventListener(KiCanvasLoadEvent.type, () => {
+                this.#part_symbol = null;
+                this.#render_part_groups();
+            }),
+        );
+
         this.renderRoot.addEventListener("click", (e) => {
             const button = (e.target as HTMLElement).closest("button");
             if (button?.name == "clear") {
@@ -91,13 +135,59 @@ export class KCSchematicGroupsPanelElement extends KCUIElement {
                 this.search_input_elm.value ?? null;
         });
 
+        this.#render_part_groups();
         this.#sync_selected();
     }
 
     #sync_selected() {
         this.#updating_selected = true;
         this.menu.selected = this.groups.selected ?? null;
+        const part_menu =
+            this.part_groups_elm.querySelector<KCUIMenuElement>("kc-ui-menu");
+        if (part_menu) {
+            part_menu.selected = this.groups.selected ?? null;
+        }
         this.#updating_selected = false;
+    }
+
+    /**
+     * Lists the groups of the symbol selected in the viewer, or nothing if
+     * no symbol is selected.
+     */
+    #render_part_groups() {
+        const symbol = this.#part_symbol;
+
+        if (!symbol) {
+            this.part_groups_elm.replaceChildren();
+            return;
+        }
+
+        // References and units are those of the sheet instance being shown.
+        const name = `${symbol.reference}${symbol.unit_suffix}`;
+        const groups = this.groups.groups_with_symbol(
+            symbol.reference,
+            symbol.unit,
+        );
+
+        const label = groups.length
+            ? `${name} is in`
+            : `${name} is in no subcircuit`;
+
+        const items = groups.map(
+            (g) =>
+                html`<kc-ui-menu-item name="${g.id}" data-match-text="${g.id}">
+                    <span>${g.label}</span>
+                </kc-ui-menu-item>`,
+        );
+
+        this.part_groups_elm.replaceChildren(
+            html`<kc-ui-panel-label>${label}</kc-ui-panel-label>`,
+            ...(items.length
+                ? [html`<kc-ui-menu class="outline">${items}</kc-ui-menu>`]
+                : []),
+        );
+
+        this.#sync_selected();
     }
 
     #entry(group: SymbolGroup, depth: number): HTMLElement[] {
@@ -192,9 +282,12 @@ export class KCSchematicGroupsPanelElement extends KCUIElement {
                     ${info
                         ? html`<kc-ui-panel-label>${info}</kc-ui-panel-label>`
                         : null}
+                    <div class="part-groups"></div>
                     <kc-ui-text-filter-input></kc-ui-text-filter-input>
                     <kc-ui-filtered-list>
-                        <kc-ui-menu class="outline">${entries}</kc-ui-menu>
+                        <kc-ui-menu id="groups" class="outline"
+                            >${entries}</kc-ui-menu
+                        >
                     </kc-ui-filtered-list>
                 </kc-ui-panel-body>
             </kc-ui-panel>

@@ -105,10 +105,14 @@ suite("kicanvas.groups", function () {
             set.children("amp#1").map((g) => g.id),
             ["part#1"],
         );
-        assert.deepEqual(
-            set.groups_with_ref("U1").map((g) => g.id),
-            ["amp#1", "part#1"],
-        );
+        const with_symbol = (ref: string, unit?: number) =>
+            set.groups_with_symbol(ref, unit).map((g) => g.id);
+
+        assert.deepEqual(with_symbol("U1"), ["amp#1", "part#1"]);
+        assert.deepEqual(with_symbol("U1", 1), ["amp#1"]);
+        assert.deepEqual(with_symbol("U1", 2), ["part#1"]);
+        assert.deepEqual(with_symbol("R1", 1), ["amp#1"]);
+        assert.deepEqual(with_symbol("R2"), []);
     });
 
     test("skips invalid groups", function () {

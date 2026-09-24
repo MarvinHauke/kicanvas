@@ -4,6 +4,7 @@
     Full text available at: https://opensource.org/licenses/MIT
 */
 
+import { later } from "../../../base/async";
 import { listen } from "../../../base/events";
 import { css, html, query } from "../../../base/web-components";
 import {
@@ -19,11 +20,17 @@ import {
     KiCanvasSelectEvent,
 } from "../../../viewers/base/events";
 import type { SchematicViewer } from "../../../viewers/schematic/viewer";
-import { SymbolGroupSet, type SymbolGroup } from "../../groups";
+import { SymbolGroupSet, type GroupPart, type SymbolGroup } from "../../groups";
+import type { Project } from "../../project";
+import { ref_matches, resolve_refs } from "../../refs";
 
 /**
  * Lists symbol groups, such as subcircuits, grouped by kind with nested
  * groups under their parent. Selecting an entry selects the group.
+ *
+ * The selected group is shown with its details: kind, status, description,
+ * related groups and parts. Selecting a part selects its symbol, switching
+ * to the sheet it's on if needed.
  *
  * When a symbol is selected in the viewer, the groups it belongs to are
  * listed above the other groups.
@@ -45,8 +52,29 @@ export class KCSchematicGroupsPanelElement extends KCUIElement {
                 cursor: pointer;
             }
 
-            .part-groups:empty {
+            .part-groups:empty,
+            .details:empty {
                 display: none;
+            }
+
+            .details {
+                margin-bottom: 0.5em;
+            }
+
+            .details p {
+                margin: 0.25em 0.2em;
+                white-space: pre-wrap;
+            }
+
+            .part-ref {
+                flex: 0 0 auto;
+            }
+
+            .part-kind {
+                flex: 1 1 auto;
+                margin-left: 1em;
+                text-align: right;
+                opacity: 0.8;
             }
 
             .marks {
@@ -60,6 +88,7 @@ export class KCSchematicGroupsPanelElement extends KCUIElement {
 
     groups: SymbolGroupSet;
     viewer: SchematicViewer;
+    project: Project;
 
     @query("kc-ui-menu#groups")
     private menu!: KCUIMenuElement;
@@ -67,10 +96,17 @@ export class KCSchematicGroupsPanelElement extends KCUIElement {
     @query(".part-groups", true)
     private part_groups_elm!: HTMLElement;
 
+    @query(".details", true)
+    private details_elm!: HTMLElement;
+
     #part_symbol: SchematicSymbol | null = null;
+
+    /** Symbol uuid to select once the sheet being switched to is loaded. */
+    #pending_symbol: string | null = null;
 
     override connectedCallback() {
         (async () => {
+            this.project = await this.requestContext("project");
             this.viewer = await this.requestLazyContext("viewer");
             await this.viewer.loaded;
             super.connectedCallback();
@@ -100,6 +136,7 @@ export class KCSchematicGroupsPanelElement extends KCUIElement {
         // Follow selection changes made elsewhere, e.g. by the page.
         this.addDisposable(
             listen(this.groups, SymbolGroupSet.select_event, () => {
+                this.#render_details();
                 this.#sync_selected();
             }),
         );
@@ -111,6 +148,7 @@ export class KCSchematicGroupsPanelElement extends KCUIElement {
                 this.#part_symbol =
                     item instanceof SchematicSymbol ? item : null;
                 this.#render_part_groups();
+                this.#sync_selected_part();
             }),
         );
 
@@ -118,6 +156,15 @@ export class KCSchematicGroupsPanelElement extends KCUIElement {
             this.viewer.addEventListener(KiCanvasLoadEvent.type, () => {
                 this.#part_symbol = null;
                 this.#render_part_groups();
+                this.#sync_selected_part();
+
+                // Select after the viewer finished loading, loading clears
+                // the selection.
+                const pending = this.#pending_symbol;
+                this.#pending_symbol = null;
+                if (pending) {
+                    later(() => this.viewer.select(pending));
+                }
             }),
         );
 
@@ -136,6 +183,7 @@ export class KCSchematicGroupsPanelElement extends KCUIElement {
         });
 
         this.#render_part_groups();
+        this.#render_details();
         this.#sync_selected();
     }
 
@@ -148,6 +196,162 @@ export class KCSchematicGroupsPanelElement extends KCUIElement {
             part_menu.selected = this.groups.selected ?? null;
         }
         this.#updating_selected = false;
+    }
+
+    /** Marks the part of the symbol selected in the viewer, if listed. */
+    #sync_selected_part() {
+        const menu =
+            this.details_elm.querySelector<KCUIMenuElement>("kc-ui-menu.parts");
+        if (!menu) {
+            return;
+        }
+
+        const symbol = this.#part_symbol;
+        const part = symbol
+            ? this.#parts.find((p) =>
+                  ref_matches(p.query, symbol.reference, symbol.unit),
+              )
+            : undefined;
+
+        this.#updating_selected = true;
+        menu.selected = part?.query.text ?? null;
+        this.#updating_selected = false;
+    }
+
+    #parts: GroupPart[] = [];
+
+    /**
+     * Selects the symbol of a part, switching to the sheet it's on unless
+     * it's on the sheet being shown.
+     */
+    #select_part(part: GroupPart) {
+        const { pages } = resolve_refs(this.project, [part.query]);
+        const active = this.project.active_page;
+        const found = pages.find((p) => p.page === active) ?? pages[0];
+        const uuid = found?.symbols[0]?.uuid;
+
+        if (!found || !uuid) {
+            return;
+        }
+
+        if (found.page === active) {
+            this.viewer.select(uuid);
+        } else {
+            this.#pending_symbol = uuid;
+            this.project.set_active_page(found.page);
+        }
+    }
+
+    /**
+     * Shows the selected group: its kind, status, description, parent and
+     * children, and its parts. Nothing is shown if no group is selected.
+     */
+    #render_details() {
+        const group = this.groups.selected_group;
+
+        if (!group) {
+            this.#parts = [];
+            this.details_elm.replaceChildren();
+            return;
+        }
+
+        this.#parts = this.groups.parts_of(group);
+
+        const properties = [
+            ["Kind", group.kind],
+            ["Status", group.status],
+        ]
+            .filter(([, value]) => value)
+            .map(
+                ([name, value]) =>
+                    html`<kc-ui-property-list-item name="${name}">
+                        ${value}
+                    </kc-ui-property-list-item>`,
+            );
+
+        const description = (group.description ?? "")
+            .split("\n")
+            .filter((line) => line)
+            .map((line) => html`<p>${line}</p>`);
+
+        const parent = group.parent
+            ? this.groups.by_id(group.parent)
+            : undefined;
+        const children = this.groups.children(group.id);
+        const related = [
+            ...(parent
+                ? [html`<kc-ui-menu-label>Part of</kc-ui-menu-label>`]
+                : []),
+            ...(parent ? [this.#group_link(parent)] : []),
+            ...(children.length
+                ? [
+                      html`<kc-ui-menu-label>
+                          Contains (${children.length})
+                      </kc-ui-menu-label>`,
+                  ]
+                : []),
+            ...children.map((child) => this.#group_link(child)),
+        ];
+
+        const part_items = this.#parts.map((part) => {
+            const info = [part.kind, part.value].filter((t) => t).join(" · ");
+            const item = html`<kc-ui-menu-item
+                name="${part.query.text}"
+                title="${part.missing ? "not found" : "select symbol"}">
+                <span class="part-ref">${part.query.text}</span>
+                <span class="part-kind" title="${info}">${info}</span>
+                <span class="marks">${part.missing ? "!" : ""}</span>
+            </kc-ui-menu-item>` as KCUIMenuItemElement;
+            item.disabled = part.missing;
+            return item;
+        });
+
+        const parts_menu = html`<kc-ui-menu class="outline parts"
+            >${part_items}</kc-ui-menu
+        >` as KCUIMenuElement;
+
+        parts_menu.addEventListener("kc-ui-menu:select", (e) => {
+            // Parts aren't groups, keep the panel from selecting one.
+            e.stopPropagation();
+
+            if (this.#updating_selected) {
+                return;
+            }
+
+            const item = (e as CustomEvent).detail as KCUIMenuItemElement;
+            const part = this.#parts.find((p) => p.query.text == item.name);
+            if (part && !part.missing) {
+                this.#select_part(part);
+            }
+        });
+
+        this.details_elm.replaceChildren(
+            html`<kc-ui-panel-label>${group.label}</kc-ui-panel-label>`,
+            ...(properties.length
+                ? [
+                      html`<kc-ui-property-list
+                          >${properties}</kc-ui-property-list
+                      >`,
+                  ]
+                : []),
+            ...description,
+            ...(related.length
+                ? [html`<kc-ui-menu class="outline">${related}</kc-ui-menu>`]
+                : []),
+            html`<kc-ui-menu-label
+                >Parts (${this.#parts.length})</kc-ui-menu-label
+            >`,
+            parts_menu,
+        );
+
+        this.#sync_selected_part();
+    }
+
+    #group_link(group: SymbolGroup) {
+        return html`<kc-ui-menu-item name="${group.id}" title="select group">
+            <span>${group.label}</span>
+            <span class="marks">${group.kind ?? ""}</span>
+        </kc-ui-menu-item>`;
     }
 
     /**
@@ -282,6 +486,7 @@ export class KCSchematicGroupsPanelElement extends KCUIElement {
                     ${info
                         ? html`<kc-ui-panel-label>${info}</kc-ui-panel-label>`
                         : null}
+                    <div class="details"></div>
                     <div class="part-groups"></div>
                     <kc-ui-text-filter-input></kc-ui-text-filter-input>
                     <kc-ui-filtered-list>

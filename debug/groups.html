@@ -21,7 +21,8 @@
                         "selected": "amp#2",
                         "groups": [
                             {"id": "amp#1", "refs": ["R1", "U1.A"], "kind": "amp",
-                             "description": "R1 &amp; U1.A &lt;left&gt;"},
+                             "description": ["R1 &amp; U1.A &lt;left&gt;",
+                                             "negative feedback closed through R1"]},
                             {"id": "amp#2", "refs": ["R11", "U11.B"], "kind": "amp",
                              "status": "ambiguous"},
                             {"id": "unit#1", "refs": ["U1.B"], "kind": "unit",
@@ -29,7 +30,8 @@
                             {"id": "spread#1", "refs": ["R100", "R1", "R999"],
                              "kind": "spread"}
                         ],
-                        "parts": {"R1": {"kind": "resistor", "value": "10k"}}
+                        "parts": {"R1": {"kind": "resistor", "value": "10k"},
+                                  "U1": {"kind": "opamp", "value": "TL072"}}
                     }
                 </kicanvas-groups>
             </kicanvas-embed>

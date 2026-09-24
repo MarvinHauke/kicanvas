@@ -179,6 +179,31 @@ suite("kicanvas.groups", function () {
         assert.deepEqual(set.by_id("amp#1")!.missing, []);
     });
 
+    test("parts of a group", async function () {
+        const project = await load_project();
+        const set = SymbolGroupSet.parse(example);
+        set.parts.set("U1.A", { kind: "opamp unit" });
+        set.resolve(project);
+
+        const parts = (id: string) =>
+            set
+                .parts_of(set.by_id(id)!)
+                .map((p) => [p.query.text, p.kind, p.value, p.missing]);
+
+        // "U1.A" has its own entry, "U1.B" falls back to "U1".
+        assert.deepEqual(parts("amp#1"), [
+            ["R1", "resistor", "10k", false],
+            ["U1.A", "opamp unit", undefined, false],
+        ]);
+        assert.deepEqual(parts("part#1"), [
+            ["U1.B", "opamp", undefined, false],
+        ]);
+        assert.deepEqual(parts("missing#1"), [
+            ["R100", undefined, undefined, false],
+            ["R999", undefined, undefined, true],
+        ]);
+    });
+
     test("selection", function () {
         const set = SymbolGroupSet.parse(example);
         const events: (string | null)[] = [];

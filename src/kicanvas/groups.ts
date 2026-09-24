@@ -65,6 +65,15 @@ export interface PartInfo {
     value?: string;
 }
 
+/** A reference of a group together with what is known about its part. */
+export interface GroupPart {
+    query: RefQuery;
+    kind?: string;
+    value?: string;
+    /** True if the reference wasn't found, set by SymbolGroupSet.resolve(). */
+    missing: boolean;
+}
+
 export class SymbolGroupSet extends EventTarget {
     /** Fired when the selected group changes, detail is the group or null. */
     static readonly select_event = "kicanvas:groups:select";
@@ -240,6 +249,24 @@ export class SymbolGroupSet extends EventTarget {
                         q.unit === unit),
             ),
         );
+    }
+
+    /**
+     * The references of a group in file order, with kind and value from
+     * parts. Parts are looked up by the reference as written ("U1.A") and
+     * then by the symbol's reference ("U1").
+     */
+    parts_of(group: SymbolGroup): GroupPart[] {
+        return group.refs.map((query) => {
+            const info =
+                this.parts.get(query.text) ?? this.parts.get(query.ref);
+            return {
+                query,
+                kind: info?.kind,
+                value: info?.value,
+                missing: group.missing.includes(query.text),
+            };
+        });
     }
 
     /**

@@ -62,7 +62,7 @@ export class KCSchematicAppElement extends KCViewerAppElement<KCSchematicViewerE
     override make_activities() {
         const groups_activity = [];
 
-        if (this.groups?.groups.length) {
+        if (this.groups) {
             const panel =
                 html`<kc-schematic-groups-panel></kc-schematic-groups-panel>` as KCSchematicGroupsPanelElement;
             panel.groups = this.groups;

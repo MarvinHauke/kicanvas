@@ -8,7 +8,9 @@ import { Logger } from "../base/log";
 import type { Project } from "./project";
 import {
     parse_refs,
+    ref_matches,
     resolve_refs,
+    suffix_from_unit,
     type RefQuery,
     type ResolvedPage,
 } from "./refs";
@@ -82,6 +84,12 @@ export interface GroupPart {
 export class SymbolGroupSet extends EventTarget {
     /** Fired when the selected group changes, detail is the group or null. */
     static readonly select_event = "kicanvas:groups:select";
+
+    /**
+     * Fired when groups are created or removed, or when an editable group's
+     * references or kind change. Detail is the group, or null if removed.
+     */
+    static readonly change_event = "kicanvas:groups:change";
 
     /** Fired when a group's review changes, detail is the group. */
     static readonly review_event = "kicanvas:groups:review";
@@ -296,7 +304,10 @@ export class SymbolGroupSet extends EventTarget {
                       : undefined,
               });
 
-        data["groups"] = this.groups.map((group) => {
+        // Created groups without symbols can't be written as v1 groups.
+        const groups = this.groups.filter((g) => g.refs.length);
+
+        data["groups"] = groups.map((group) => {
             const item = structuredClone(
                 this.#source_groups.get(group.id) ?? group_to_json(group),
             );
@@ -368,17 +379,146 @@ export class SymbolGroupSet extends EventTarget {
      * group's pages and missing references.
      */
     resolve(project: Project) {
+        this.#project = project;
         for (const group of this.groups) {
-            const { pages, missing } = resolve_refs(project, group.refs);
-            group.pages = pages;
-            group.missing = missing;
-
-            if (missing.length) {
-                log.warn(
-                    `Symbol group "${group.id}": references not found: ${missing.join(" ")}`,
-                );
-            }
+            this.#resolve_group(group);
         }
+    }
+
+    #project?: Project;
+
+    #resolve_group(group: SymbolGroup) {
+        if (!this.#project) {
+            return;
+        }
+
+        const { pages, missing } = resolve_refs(this.#project, group.refs);
+        group.pages = pages;
+        group.missing = missing;
+
+        if (missing.length) {
+            log.warn(
+                `Symbol group "${group.id}": references not found: ${missing.join(" ")}`,
+            );
+        }
+    }
+
+    /** Ids of the groups created by create_group(), which can be edited. */
+    #created: Set<string> = new Set();
+
+    /**
+     * True if the group was created here, by create_group() or
+     * copy_group(). Only those groups can be edited or removed, groups that
+     * were loaded can only be reviewed.
+     */
+    is_editable(id: string): boolean {
+        return this.#created.has(id);
+    }
+
+    /**
+     * Creates a group with the next free id "new#n", marked as correct, and
+     * finds its symbols in the project given to resolve().
+     */
+    create_group(refs: RefQuery[] = [], kind?: string): SymbolGroup {
+        let n = 1;
+        while (this.#by_id.has(`new#${n}`)) {
+            n++;
+        }
+        const id = `new#${n}`;
+
+        const group: SymbolGroup = {
+            id,
+            refs: [...refs],
+            label: id,
+            kind,
+            review: "correct",
+            pages: [],
+            missing: [],
+        };
+
+        this.add(group);
+        this.#created.add(id);
+        this.#resolve_group(group);
+        this.#changed(group);
+        return group;
+    }
+
+    /** Creates an editable group with the references and kind of another. */
+    copy_group(id: string): SymbolGroup | undefined {
+        const group = this.#by_id.get(id);
+        return group ? this.create_group(group.refs, group.kind) : undefined;
+    }
+
+    /** Changes the references of an editable group. */
+    set_refs(id: string, refs: RefQuery[]) {
+        const group = this.#editable(id);
+        if (group) {
+            group.refs = [...refs];
+            this.#resolve_group(group);
+            this.#changed(group);
+        }
+    }
+
+    /**
+     * Adds the symbol with the given reference and unit to an editable
+     * group, or removes it if the group has it. Removing also removes a
+     * reference to all units of the symbol.
+     */
+    toggle_symbol(id: string, reference: string, unit?: number) {
+        const group = this.#editable(id);
+        if (!group) {
+            return;
+        }
+
+        const matches = (q: RefQuery) => ref_matches(q, reference, unit);
+        if (group.refs.some(matches)) {
+            this.set_refs(
+                id,
+                group.refs.filter((q) => !matches(q)),
+            );
+        } else {
+            const text = unit
+                ? `${reference}.${suffix_from_unit(unit)}`
+                : reference;
+            this.set_refs(id, [...group.refs, { text, ref: reference, unit }]);
+        }
+    }
+
+    /** Changes the kind of an editable group. */
+    set_kind(id: string, kind: string | undefined) {
+        const group = this.#editable(id);
+        if (group && group.kind !== (kind || undefined)) {
+            group.kind = kind || undefined;
+            this.#changed(group);
+        }
+    }
+
+    /** Removes an editable group, deselecting it if it's selected. */
+    remove_group(id: string) {
+        const group = this.#editable(id);
+        if (!group) {
+            return;
+        }
+
+        if (this.#selected == id) {
+            this.select(null);
+        }
+
+        this.groups = this.groups.filter((g) => g !== group);
+        this.#by_id.delete(id);
+        this.#created.delete(id);
+        this.#review_history = this.#review_history.filter((r) => r.id != id);
+        this.#changed(null);
+    }
+
+    #editable(id: string): SymbolGroup | undefined {
+        return this.#created.has(id) ? this.#by_id.get(id) : undefined;
+    }
+
+    #changed(group: SymbolGroup | null) {
+        this.dispatchEvent(
+            new CustomEvent(SymbolGroupSet.change_event, { detail: group }),
+        );
     }
 }
 

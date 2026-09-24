@@ -11,6 +11,7 @@ import { Project } from "../../src/kicanvas/project";
 import {
     parse_refs,
     resolve_refs,
+    suffix_from_unit,
     unit_from_suffix,
     type ResolvedRefs,
 } from "../../src/kicanvas/refs";
@@ -48,6 +49,15 @@ suite("kicanvas.refs", function () {
         assert.equal(unit_from_suffix("b"), 2);
         assert.equal(unit_from_suffix("Z"), 26);
         assert.equal(unit_from_suffix("AA"), 27);
+    });
+
+    test("suffix_from_unit", function () {
+        assert.equal(suffix_from_unit(1), "A");
+        assert.equal(suffix_from_unit(26), "Z");
+        assert.equal(suffix_from_unit(27), "AA");
+        for (let unit = 1; unit < 800; unit++) {
+            assert.equal(unit_from_suffix(suffix_from_unit(unit)), unit);
+        }
     });
 
     test("parse_refs", function () {

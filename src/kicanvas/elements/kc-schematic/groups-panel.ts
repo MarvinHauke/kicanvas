@@ -57,6 +57,9 @@ const shortcuts = [
     ["x", "wrong / clear", "Review"],
     ["u", "undo last review", "Review"],
     [":w", "export reviews", "Review"],
+    ["o", "new group", "Edit"],
+    ["c", "copy group as new group", "Edit"],
+    ["dd", "delete new group", "Edit"],
     ["zz", "zoom to group", "Zoom"],
     ["zs", "zoom to selected symbol", "Zoom"],
     ["zp", "zoom to page", "Zoom"],
@@ -68,6 +71,9 @@ const shortcuts = [
 ] as const;
 
 type Shortcut = (typeof shortcuts)[number][0];
+
+/** Shown in the details of groups that can be edited. */
+const edit_hint = "Shift-click symbols to add or remove them.";
 
 /** Keys that are only pressed together with others. */
 const modifier_keys = ["Shift", "Control", "Alt", "Meta", "CapsLock"];
@@ -157,6 +163,24 @@ export class KCSchematicGroupsPanelElement extends KCUIElement {
                 font-family: monospace;
                 font-weight: bold;
                 color: var(--input-accent);
+            }
+
+            .details input.kind {
+                all: unset;
+                width: 100%;
+                background: var(--input-bg);
+                color: var(--input-fg);
+                padding: 0 0.2em;
+            }
+
+            .details p.hint {
+                text-align: left;
+                opacity: 0.7;
+                font-style: italic;
+            }
+
+            .review kc-ui-button[name="delete"] {
+                flex: 0 0 auto;
             }
 
             .details p {
@@ -251,6 +275,23 @@ export class KCSchematicGroupsPanelElement extends KCUIElement {
                 const item = e.detail.item;
                 this.#part_symbol =
                     item instanceof SchematicSymbol ? item : null;
+
+                // Shift-clicking a symbol adds it to or removes it from the
+                // selected group, if that group can be edited.
+                const group = this.groups.selected_group;
+                if (
+                    e.detail.additive &&
+                    item instanceof SchematicSymbol &&
+                    group &&
+                    this.groups.is_editable(group.id)
+                ) {
+                    this.groups.toggle_symbol(
+                        group.id,
+                        item.reference,
+                        item.unit_suffix ? item.unit : undefined,
+                    );
+                }
+
                 this.#render_part_groups();
                 this.#sync_selected_part();
             }),
@@ -269,6 +310,17 @@ export class KCSchematicGroupsPanelElement extends KCUIElement {
                 if (pending) {
                     later(() => this.viewer.select(pending));
                 }
+            }),
+        );
+
+        // Groups were created, edited or removed.
+        this.addDisposable(
+            listen(this.groups, SymbolGroupSet.change_event, () => {
+                this.#unexported = true;
+                this.#render_list();
+                this.#render_details();
+                this.#render_part_groups();
+                this.#update_info();
             }),
         );
 
@@ -299,6 +351,10 @@ export class KCSchematicGroupsPanelElement extends KCUIElement {
                 this.groups.select(null);
             } else if (name == "export") {
                 this.#export();
+            } else if (name == "new") {
+                this.#new_group();
+            } else if (name == "delete" && group) {
+                this.groups.remove_group(group.id);
             } else if (group && (name == "correct" || name == "wrong")) {
                 this.#toggle_review(name);
             }
@@ -322,6 +378,28 @@ export class KCSchematicGroupsPanelElement extends KCUIElement {
                 this.#on_key(e as KeyboardEvent);
             }),
         );
+    }
+
+    /**
+     * Creates a group with the symbol selected in the viewer, if any, selects
+     * it and lets its kind be typed in.
+     */
+    #new_group() {
+        const symbol = this.#part_symbol;
+        const refs = symbol
+            ? [
+                  symbol.unit_suffix
+                      ? {
+                            text: `${symbol.reference}.${symbol.unit_suffix}`,
+                            ref: symbol.reference,
+                            unit: symbol.unit,
+                        }
+                      : { text: symbol.reference, ref: symbol.reference },
+              ]
+            : [];
+
+        this.#go_to(this.groups.create_group(refs).id);
+        this.details_elm.querySelector<HTMLInputElement>("input.kind")?.focus();
     }
 
     /** Sets the review of the selected group, or clears it if it's set. */
@@ -496,6 +574,19 @@ export class KCSchematicGroupsPanelElement extends KCUIElement {
             case "?":
                 this.#show_which_key();
                 break;
+            case "o":
+                this.#new_group();
+                break;
+            case "c":
+                if (selected !== undefined) {
+                    this.#go_to(this.groups.copy_group(selected)?.id);
+                }
+                break;
+            case "dd":
+                if (selected !== undefined) {
+                    this.groups.remove_group(selected);
+                }
+                break;
             case "zz": {
                 const group = this.groups.selected_group;
                 if (group) {
@@ -619,15 +710,19 @@ export class KCSchematicGroupsPanelElement extends KCUIElement {
 
         this.#parts = this.groups.parts_of(group);
 
+        const editable = this.groups.is_editable(group.id);
+
         const properties = [
             ["Kind", group.kind],
             ["Status", group.status],
         ]
-            .filter(([, value]) => value)
+            .filter(([name, value]) => value || (editable && name == "Kind"))
             .map(
                 ([name, value]) =>
                     html`<kc-ui-property-list-item name="${name}">
-                        ${value}
+                        ${editable && name == "Kind"
+                            ? this.#kind_input(group)
+                            : value}
                     </kc-ui-property-list-item>`,
             );
 
@@ -703,9 +798,21 @@ export class KCSchematicGroupsPanelElement extends KCUIElement {
             return button;
         });
 
+        if (editable) {
+            review_buttons.push(
+                html`<kc-ui-button
+                    name="delete"
+                    variant="outline"
+                    title="Delete this group (dd)">
+                    Delete
+                </kc-ui-button>` as KCUIButtonElement,
+            );
+        }
+
         this.details_elm.replaceChildren(
             html`<kc-ui-panel-label>${group.label}</kc-ui-panel-label>`,
             html`<div class="review">${review_buttons}</div>`,
+            ...(editable ? [html`<p class="hint">${edit_hint}</p>`] : []),
             ...(properties.length
                 ? [
                       html`<kc-ui-property-list
@@ -724,6 +831,25 @@ export class KCSchematicGroupsPanelElement extends KCUIElement {
         );
 
         this.#sync_selected_part();
+    }
+
+    /** A text field for the kind of an editable group. */
+    #kind_input(group: SymbolGroup) {
+        const input = html`<input
+            class="kind"
+            type="text"
+            placeholder="type the kind"
+            value="${group.kind ?? ""}" />` as HTMLInputElement;
+
+        input.addEventListener("change", () => {
+            this.groups.set_kind(group.id, input.value.trim());
+        });
+        input.addEventListener("keydown", (e) => {
+            if (e.key == "Enter") {
+                input.blur();
+            }
+        });
+        return input;
     }
 
     #group_link(group: SymbolGroup) {
@@ -800,10 +926,7 @@ export class KCSchematicGroupsPanelElement extends KCUIElement {
             marks.textContent = this.#marks(group);
         }
 
-        const info = this.renderRoot.querySelector(".info");
-        if (info) {
-            info.textContent = this.#info();
-        }
+        this.#update_info();
 
         if (group.id == this.groups.selected) {
             this.#render_details();
@@ -881,7 +1004,8 @@ export class KCSchematicGroupsPanelElement extends KCUIElement {
         ];
     }
 
-    override render() {
+    /** The list of groups by kind, with nested groups under their parent. */
+    #list_entries(): HTMLElement[] {
         const by_kind = new Map<string, SymbolGroup[]>();
         for (const group of this.groups.top_level) {
             const kind = group.kind ?? "other";
@@ -899,6 +1023,25 @@ export class KCSchematicGroupsPanelElement extends KCUIElement {
                 entries.push(...this.#entry(group, 0));
             }
         }
+        return entries;
+    }
+
+    /** Lists the groups again, keeping the search and the selection. */
+    #render_list() {
+        this.menu.replaceChildren(...this.#list_entries());
+        this.item_filter_elem.filter_text = this.search_input_elm.value || null;
+        this.#sync_selected();
+    }
+
+    #update_info() {
+        const info = this.renderRoot.querySelector(".info");
+        if (info) {
+            info.textContent = this.#info();
+        }
+    }
+
+    override render() {
+        const entries = this.#list_entries();
 
         return html`
             <kc-ui-panel>
@@ -909,6 +1052,13 @@ export class KCSchematicGroupsPanelElement extends KCUIElement {
                         name="clear"
                         title="Clear selection">
                         <kc-ui-icon>deselect</kc-ui-icon>
+                    </button>
+                    <button
+                        slot="actions"
+                        type="button"
+                        name="new"
+                        title="New group from the selected symbol (o)">
+                        <kc-ui-icon>add</kc-ui-icon>
                     </button>
                     <button
                         slot="actions"

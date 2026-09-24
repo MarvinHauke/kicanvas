@@ -41,6 +41,21 @@ export function unit_from_suffix(suffix: string): number {
 }
 
 /**
+ * Converts a unit number into a unit suffix, the inverse of
+ * unit_from_suffix(): 1 = A, 26 = Z, 27 = AA.
+ */
+export function suffix_from_unit(unit: number): string {
+    const A = "A".charCodeAt(0);
+    let suffix = "";
+    while (unit > 0) {
+        const x = (unit - 1) % 26;
+        suffix = String.fromCharCode(A + x) + suffix;
+        unit = (unit - 1 - x) / 26;
+    }
+    return suffix;
+}
+
+/**
  * Parses a list of references separated by spaces or commas, such as
  * "R1 R2 U2.A". A reference with a unit suffix ("U2.A") only matches that
  * unit, a plain reference ("U2") matches all units.

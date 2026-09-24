@@ -192,6 +192,10 @@ class KiCanvasEmbedElement extends KCUIElement {
                 this.#groups.addEventListener(SymbolGroupSet.select_event, () =>
                     this.#show_selected_group(),
                 );
+                // Redraw the selected group when it's edited.
+                this.#groups.addEventListener(SymbolGroupSet.change_event, () =>
+                    this.#paint_selected_group(),
+                );
                 this.#show_selected_group();
             }
 
@@ -301,11 +305,7 @@ class KiCanvasEmbedElement extends KCUIElement {
     #show_selected_group() {
         const group = this.#groups?.selected_group;
 
-        if (this.#schematic_app) {
-            this.#schematic_app.highlights = group
-                ? [this.#highlight_for(group)]
-                : [];
-        }
+        this.#paint_selected_group();
 
         if (!group?.pages.length) {
             return;
@@ -314,6 +314,17 @@ class KiCanvasEmbedElement extends KCUIElement {
         const active = this.#project.active_page;
         if (!group.pages.some((p) => p.page === active)) {
             this.#project.set_active_page(group.pages[0]!.page);
+        }
+    }
+
+    /** Highlights the selected symbol group, or nothing. */
+    #paint_selected_group() {
+        const group = this.#groups?.selected_group;
+
+        if (this.#schematic_app) {
+            this.#schematic_app.highlights = group
+                ? [this.#highlight_for(group)]
+                : [];
         }
     }
 

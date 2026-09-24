@@ -230,6 +230,8 @@ The **Subcircuits** panel shows:
 
 **Reviewing:** mark the selected group with **✓ Correct** or **✗ Wrong**. Selecting the same button again clears the review. The download button in the panel title exports the groups as `<title>.groups.json`. The file is the loaded JSON with only the `review` of each group changed, and `reviewed` is set to `true` once every group has a review. The browser asks before you leave the page with reviews that weren't exported.
 
+**Adding groups:** for a subcircuit that's missing from the list, select one of its symbols and press `o` or the **+** button in the panel title. This creates a group named `new#1`, `new#2` and so on, marked as correct. Type its kind in the details, then Shift-click (or Ctrl/Cmd-click) more symbols in the schematic to add them. Shift-clicking a symbol that's already in the group removes it. You can switch sheets while doing this, so a group can span sheets. For a group that's only partly right, mark it wrong and press `c` to make an editable copy to fix. Only groups created this way can be edited or deleted; loaded groups can only be reviewed. The export adds the new groups at the end, with `id`, `refs`, `kind` and `review`. Groups without symbols are left out.
+
 **Keyboard shortcuts** work while the Subcircuits panel is open. They're vim style: press `?` to see them all. When you start a shortcut with several keys, such as `z`, a popup shows how it can go on.
 
 | Keys       | Action                                     |
@@ -240,6 +242,9 @@ The **Subcircuits** panel shows:
 | `y` / `x`  | mark correct / wrong, again to clear       |
 | `u`        | undo the last review                       |
 | `:w`       | export the reviews                         |
+| `o`        | new group from the selected symbol         |
+| `c`        | copy the selected group as a new group     |
+| `dd`       | delete the selected new group              |
 | `zz`       | zoom to the selected group                 |
 | `zs`       | zoom to the selected symbol                |
 | `zp`       | zoom to the page                           |
@@ -256,6 +261,7 @@ From JavaScript, the groups are available as `groups` on the `<kicanvas-embed>` 
 const embed = document.querySelector("kicanvas-embed");
 embed.groups.select("inverting_amp#1"); // or null to clear the selection
 embed.groups.set_review("inverting_amp#1", "correct");
+embed.groups.create_group(); // an empty, editable "new#n" group
 const json = embed.groups.to_json();
 ```
 

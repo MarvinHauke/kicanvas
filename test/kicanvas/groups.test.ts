@@ -342,6 +342,92 @@ suite("kicanvas.groups", function () {
         });
     });
 
+    test("create and edit groups", async function () {
+        const project = await load_project();
+        const set = SymbolGroupSet.parse(example);
+        set.resolve(project);
+
+        const changes: (string | null)[] = [];
+        set.addEventListener(SymbolGroupSet.change_event, (e) => {
+            changes.push((e as CustomEvent).detail?.id ?? null);
+        });
+
+        const group = set.create_group(parse_refs("R1"), "amp");
+        assert.equal(group.id, "new#1");
+        assert.equal(group.review, "correct");
+        assert.isTrue(set.is_editable("new#1"));
+        assert.isFalse(set.is_editable("amp#1"));
+        assert.deepEqual(
+            group.pages.map((p) => p.page.name),
+            ["amp_left"],
+        );
+
+        // Adding and removing symbols; removing U1 drops the "U1" query.
+        set.toggle_symbol("new#1", "U1", 2);
+        assert.deepEqual(
+            group.refs.map((r) => r.text),
+            ["R1", "U1.B"],
+        );
+        set.set_refs("new#1", parse_refs("R1 U1"));
+        set.toggle_symbol("new#1", "U1", 1);
+        set.toggle_symbol("new#1", "R999");
+        assert.deepEqual(
+            group.refs.map((r) => r.text),
+            ["R1", "R999"],
+        );
+        assert.deepEqual(group.missing, ["R999"]);
+
+        set.set_kind("new#1", "buffer");
+        set.set_kind("new#1", "buffer"); // unchanged, no event
+        assert.equal(group.kind, "buffer");
+
+        // Loaded groups can't be edited or removed.
+        set.set_refs("amp#1", []);
+        set.set_kind("amp#1", "x");
+        set.remove_group("amp#1");
+        assert.equal(set.by_id("amp#1")!.refs.length, 2);
+        assert.equal(set.by_id("amp#1")!.kind, "amp");
+
+        const copy = set.copy_group("amp#1")!;
+        assert.equal(copy.id, "new#2");
+        assert.deepEqual(
+            copy.refs.map((r) => r.text),
+            ["R1", "U1.A"],
+        );
+        assert.equal(copy.kind, "amp");
+
+        set.select("new#2");
+        set.remove_group("new#2");
+        assert.isUndefined(set.by_id("new#2"));
+        assert.isUndefined(set.selected);
+
+        assert.deepEqual(changes, [
+            "new#1",
+            "new#1",
+            "new#1",
+            "new#1",
+            "new#1",
+            "new#1",
+            "new#2",
+            null,
+        ]);
+    });
+
+    test("to_json with created groups", function () {
+        const set = SymbolGroupSet.parse(example);
+        set.create_group(parse_refs("R5 U3.A"), "buffer");
+        set.create_group(); // no symbols, left out
+
+        const json = set.to_json() as any;
+        assert.equal(json.groups.length, example.groups.length + 1);
+        assert.deepEqual(json.groups.at(-1), {
+            id: "new#1",
+            refs: ["R5", "U3.A"],
+            kind: "buffer",
+            review: "correct",
+        });
+    });
+
     test("add", function () {
         const set = new SymbolGroupSet();
         const group = {

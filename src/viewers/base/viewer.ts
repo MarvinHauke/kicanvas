@@ -10,13 +10,14 @@ import { listen } from "../../base/events";
 import { no_self_recursion } from "../../base/functions";
 import { BBox, Vec2 } from "../../base/math";
 import { Color, Polygon, Polyline, Renderer } from "../../graphics";
+import { parse_view, type RefQuery } from "../../kicanvas/refs";
 import {
     KiCanvasLoadEvent,
     KiCanvasMouseMoveEvent,
     KiCanvasSelectEvent,
     type KiCanvasEventMap,
 } from "./events";
-import { ViewLayerSet } from "./view-layers";
+import { ViewLayerNames, ViewLayerSet } from "./view-layers";
 import { Viewport } from "./viewport";
 
 export abstract class Viewer extends EventTarget {
@@ -25,6 +26,12 @@ export abstract class Viewer extends EventTarget {
     public layers: ViewLayerSet;
     public mouse_position: Vec2 = new Vec2(0, 0);
     public loaded = new Barrier();
+
+    /**
+     * View to show when the next document is loaded instead of the whole
+     * page, see zoom_to(). It's cleared once it's been applied.
+     */
+    public initial_view: string | null = null;
 
     protected disposables = new Disposables();
     protected setup_finished = new Barrier();
@@ -242,6 +249,68 @@ export abstract class Viewer extends EventTarget {
     }
 
     abstract zoom_to_page(): void;
+
+    /**
+     * Zooms to a view: "page", "objects", an area "x y w h", or a list of
+     * references such as "R1 R2 U1.A".
+     *
+     * @returns false if the view couldn't be found, for example because none
+     * of the references are in the current document.
+     */
+    zoom_to(view: string): boolean {
+        const spec = parse_view(view);
+        let bbox: BBox | null;
+
+        switch (spec.kind) {
+            case "page":
+                this.zoom_to_page();
+                return true;
+            case "objects":
+                bbox = this.objects_bbox()?.grow(10) ?? null;
+                break;
+            case "area":
+                bbox = spec.bbox;
+                break;
+            case "refs":
+                bbox = this.find_refs_bbox(spec.refs)?.grow(10) ?? null;
+                break;
+        }
+
+        if (!bbox?.valid) {
+            return false;
+        }
+
+        this.viewport.camera.bbox = bbox;
+        this.draw();
+        return true;
+    }
+
+    /**
+     * @returns a bounding box around all items, excluding the drawing sheet.
+     */
+    protected objects_bbox(): BBox | null {
+        const bboxes = [];
+
+        for (const layer of this.layers.in_order()) {
+            if (
+                layer.name != ViewLayerNames.drawing_sheet &&
+                layer.name != ViewLayerNames.grid
+            ) {
+                bboxes.push(layer.bbox);
+            }
+        }
+
+        const bbox = BBox.combine(bboxes);
+        return bbox.valid ? bbox : null;
+    }
+
+    /**
+     * @returns a bounding box around the items with the given references,
+     * or null if none were found. Implemented by viewers that support it.
+     */
+    protected find_refs_bbox(refs: RefQuery[]): BBox | null {
+        return null;
+    }
 
     zoom_to_selection() {
         if (!this.selected) {

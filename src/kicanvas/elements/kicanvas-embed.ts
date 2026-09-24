@@ -15,7 +15,8 @@ import {
 } from "../../base/web-components";
 import { KCUIElement } from "../../kc-ui";
 import kc_ui_styles from "../../kc-ui/kc-ui.css";
-import { Project } from "../project";
+import { Project, type ProjectPage } from "../project";
+import { parse_view, resolve_refs } from "../refs";
 import {
     FetchFileSystem,
     LocalFileSystem,
@@ -170,10 +171,58 @@ class KiCanvasEmbedElement extends KCUIElement {
             this.loaded = true;
             await this.update();
 
-            this.#project.set_active_page(this.#project.root_schematic_page!);
+            this.#project.set_active_page(this.#setup_initial_view());
         } finally {
             this.loading = false;
         }
+    }
+
+    /**
+     * Passes the zoom attribute on to the viewers and returns the page to
+     * show first: the root schematic, or the page that contains the
+     * references given in zoom.
+     */
+    #setup_initial_view(): ProjectPage | undefined {
+        const root = this.#project.root_schematic_page;
+        const spec = parse_view(this.zoom);
+
+        if (spec.kind == "page") {
+            return root;
+        }
+
+        if (this.#schematic_app) {
+            this.#schematic_app.initial_view = this.zoom;
+        }
+        if (this.#board_app) {
+            this.#board_app.initial_view = this.zoom;
+        }
+
+        if (spec.kind != "refs") {
+            return root;
+        }
+
+        const { pages, missing } = resolve_refs(this.#project, spec.refs);
+
+        if (missing.length) {
+            log.warn(`zoom: references not found: ${missing.join(" ")}`);
+        }
+
+        // Show the page with the most matching symbols, if the references
+        // are spread over several pages the others are left out.
+        let best = pages[0];
+        for (const p of pages) {
+            if (p.symbols.length > best!.symbols.length) {
+                best = p;
+            }
+        }
+
+        if (pages.length > 1) {
+            log.warn(
+                `zoom: references are on ${pages.length} sheets, showing ${best!.page.name ?? best!.page.filename}`,
+            );
+        }
+
+        return best?.page ?? root;
     }
 
     override render() {

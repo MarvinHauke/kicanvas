@@ -1,0 +1,55 @@
+<!doctype html>
+<html>
+    <head>
+        <link rel="stylesheet" href="./embedded-style.css" />
+    </head>
+
+    <body>
+        <main>
+            <p>zoom="page" (default)</p>
+            <kicanvas-embed src="examples/helium.kicad_sch" controls="basic">
+            </kicanvas-embed>
+
+            <p>zoom="objects"</p>
+            <kicanvas-embed
+                src="examples/helium.kicad_sch"
+                controls="basic"
+                zoom="objects">
+            </kicanvas-embed>
+
+            <p>zoom="C1 C2 C3"</p>
+            <kicanvas-embed
+                src="examples/helium.kicad_sch"
+                controls="basic"
+                zoom="C1 C2 C3">
+            </kicanvas-embed>
+
+            <p>zoom="100 50 80 60" (area x y w h)</p>
+            <kicanvas-embed
+                src="examples/helium.kicad_sch"
+                controls="basic"
+                zoom="100 50 80 60">
+            </kicanvas-embed>
+
+            <p>
+                zoom="U11.B" (unit B on the second instance of a reused sheet,
+                switches to the "amp_right" sheet)
+            </p>
+            <kicanvas-embed controls="full" zoom="U11.B">
+                <kicanvas-source src="examples/hier/root.kicad_sch">
+                </kicanvas-source>
+                <kicanvas-source src="examples/hier/amp.kicad_sch">
+                </kicanvas-source>
+            </kicanvas-embed>
+
+            <p>zoom="R999" (unknown reference: warning, shows page)</p>
+            <kicanvas-embed
+                src="examples/helium.kicad_sch"
+                controls="basic"
+                zoom="R999">
+            </kicanvas-embed>
+        </main>
+    </body>
+
+    <script type="module" src="./kicanvas/kicanvas.js"></script>
+</html>

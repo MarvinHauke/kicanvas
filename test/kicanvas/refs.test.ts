@@ -10,6 +10,7 @@ import { KicadSch } from "../../src/kicad/schematic";
 import { Project } from "../../src/kicanvas/project";
 import {
     parse_refs,
+    parse_view,
     resolve_refs,
     unit_from_suffix,
     type ResolvedRefs,
@@ -60,6 +61,31 @@ suite("kicanvas.refs", function () {
         assert.deepEqual(parse_refs("  , "), []);
         // A suffix that isn't all letters is part of the reference.
         assert.deepEqual(parse_refs("U2.1"), [{ text: "U2.1", ref: "U2.1" }]);
+    });
+
+    test("parse_view", function () {
+        assert.deepEqual(parse_view(null), { kind: "page" });
+        assert.deepEqual(parse_view(" page "), { kind: "page" });
+        assert.deepEqual(parse_view("objects"), { kind: "objects" });
+
+        const area = parse_view("10 20.5 30 40");
+        assert.equal(area.kind, "area");
+        if (area.kind == "area") {
+            assert.deepEqual(
+                [area.bbox.x, area.bbox.y, area.bbox.w, area.bbox.h],
+                [10, 20.5, 30, 40],
+            );
+        }
+
+        assert.deepEqual(parse_view("R1 U2.B"), {
+            kind: "refs",
+            refs: [
+                { text: "R1", ref: "R1" },
+                { text: "U2.B", ref: "U2", unit: 2 },
+            ],
+        });
+        // Not four numbers, so these are references.
+        assert.equal(parse_view("1 2 3").kind, "refs");
     });
 
     test("resolves references per sheet instance", async function () {

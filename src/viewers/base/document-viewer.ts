@@ -74,6 +74,15 @@ export abstract class DocumentViewer<
             log.info("Positioning camera");
             this.zoom_to_page();
 
+            if (this.initial_view) {
+                const view = this.initial_view;
+                this.initial_view = null;
+
+                if (!this.zoom_to(view)) {
+                    log.warn(`Unable to zoom to "${view}", showing page`);
+                }
+            }
+
             // Mark the viewer as loaded and notify event listeners
             this.resolve_loaded(true);
 

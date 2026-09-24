@@ -45,6 +45,12 @@ export abstract class KCViewerAppElement<
     #activity_bar: KCUIActivitySideBarElement | null;
 
     project: Project;
+
+    /**
+     * View to show when the first page is loaded, see Viewer.zoom_to().
+     */
+    initial_view: string | null = null;
+
     viewerReady: DeferredPromise<boolean> = new DeferredPromise<boolean>();
 
     constructor() {
@@ -130,6 +136,10 @@ export abstract class KCViewerAppElement<
     async load(src: ProjectPage) {
         await this.viewerReady;
         if (this.can_load(src)) {
+            if (this.initial_view) {
+                this.viewer.initial_view = this.initial_view;
+                this.initial_view = null;
+            }
             await this.#viewer_elm.load(src);
             this.hidden = false;
         } else {

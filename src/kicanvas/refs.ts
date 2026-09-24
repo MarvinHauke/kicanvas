@@ -4,6 +4,7 @@
     Full text available at: https://opensource.org/licenses/MIT
 */
 
+import { BBox } from "../base/math";
 import { KicadSch, type SchematicSymbol } from "../kicad/schematic";
 import type { Project, ProjectPage } from "./project";
 
@@ -76,6 +77,39 @@ export function ref_matches(query: RefQuery, reference: string, unit?: number) {
         query.ref == reference &&
         (query.unit === undefined || query.unit == unit)
     );
+}
+
+/**
+ * A view given by the kicanvas-embed zoom attribute.
+ */
+export type ViewSpec =
+    | { kind: "page" }
+    | { kind: "objects" }
+    | { kind: "area"; bbox: BBox }
+    | { kind: "refs"; refs: RefQuery[] };
+
+/**
+ * Parses a view: "page", "objects", an area "x y w h" (like the SVG
+ * viewBox attribute), or a list of references.
+ */
+export function parse_view(view: string | null | undefined): ViewSpec {
+    view = view?.trim() ?? "";
+
+    if (!view || view == "page") {
+        return { kind: "page" };
+    }
+
+    if (view == "objects") {
+        return { kind: "objects" };
+    }
+
+    const numbers = view.split(/[\s,]+/).map(Number);
+    if (numbers.length == 4 && numbers.every((n) => Number.isFinite(n))) {
+        const [x, y, w, h] = numbers as [number, number, number, number];
+        return { kind: "area", bbox: new BBox(x, y, w, h) };
+    }
+
+    return { kind: "refs", refs: parse_refs(view) };
 }
 
 /**

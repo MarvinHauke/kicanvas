@@ -72,7 +72,14 @@ export class KCSchematicGroupsPanelElement extends KCUIElement {
             }
 
             .review kc-ui-button {
-                flex: 1 1 50%;
+                flex: 1 1 0;
+                min-width: 0;
+            }
+
+            .review kc-ui-button::part(base) {
+                width: 100%;
+                justify-content: center;
+                white-space: nowrap;
             }
 
             .review kc-ui-button[selected]::part(base) {
@@ -418,7 +425,7 @@ export class KCSchematicGroupsPanelElement extends KCUIElement {
     #group_link(group: SymbolGroup) {
         return html`<kc-ui-menu-item name="${group.id}" title="select group">
             <span>${group.label}</span>
-            <span class="marks">${group.kind ?? ""}</span>
+            <span class="marks">${this.#marks(group)}</span>
         </kc-ui-menu-item>`;
     }
 

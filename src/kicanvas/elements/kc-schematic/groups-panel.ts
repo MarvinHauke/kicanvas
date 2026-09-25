@@ -260,6 +260,32 @@ export class KCSchematicGroupsPanelElement extends KCUIElement {
                 padding: 0 0.2em;
             }
 
+            .details .chips {
+                display: flex;
+                flex-wrap: wrap;
+                align-items: center;
+                gap: 0.3em;
+                margin: 0.3em 0.2em;
+            }
+
+            .details .chips button {
+                all: unset;
+                cursor: pointer;
+                padding: 0.1em 0.5em;
+                border-radius: 1em;
+                background: var(--list-item-hover-bg);
+                color: var(--list-item-hover-fg);
+            }
+
+            .details .chips button:hover {
+                background: var(--list-item-active-bg);
+                color: var(--list-item-active-fg);
+            }
+
+            .details p.warning {
+                color: var(--input-accent);
+            }
+
             .details p.hint {
                 text-align: left;
                 opacity: 0.7;
@@ -441,6 +467,11 @@ export class KCSchematicGroupsPanelElement extends KCUIElement {
                 this.groups.select(null);
             } else if (name == "export") {
                 this.#export();
+            } else if (name == "kind" && group && button) {
+                this.groups.set_kind(
+                    group.id,
+                    (button as HTMLButtonElement).value,
+                );
             } else if (name == "evaluation") {
                 this.#toggle_evaluation();
             } else if (name == "new") {
@@ -1013,6 +1044,7 @@ export class KCSchematicGroupsPanelElement extends KCUIElement {
                       >`,
                   ]
                 : []),
+            ...(editable ? this.#kind_help(group) : []),
             ...description,
             ...(related.length
                 ? [html`<kc-ui-menu class="outline">${related}</kc-ui-menu>`]
@@ -1037,12 +1069,72 @@ export class KCSchematicGroupsPanelElement extends KCUIElement {
         input.addEventListener("change", () => {
             this.groups.set_kind(group.id, input.value.trim());
         });
+        input.setAttribute("list", "known-kinds");
         input.addEventListener("keydown", (e) => {
             if (e.key == "Enter") {
                 input.blur();
+            } else if (e.key == "Tab" && !e.shiftKey) {
+                // Complete to the best suggestion or known kind that starts
+                // with what's typed.
+                const typed = input.value.trim().toLowerCase();
+                const match = [
+                    ...this.groups.suggest_kinds(group),
+                    ...this.groups.known_kinds(),
+                ].find(
+                    (k) =>
+                        k.toLowerCase().startsWith(typed) &&
+                        k.toLowerCase() != typed,
+                );
+                if (match) {
+                    e.preventDefault();
+                    input.value = match;
+                }
             }
         });
         return input;
+    }
+
+    /**
+     * The known kinds for the kind field, the suggested kinds as buttons,
+     * and a warning if the kind isn't known.
+     */
+    #kind_help(group: SymbolGroup): Node[] {
+        const datalist = html`<datalist id="known-kinds"></datalist>`;
+        datalist.replaceChildren(
+            ...this.groups
+                .known_kinds()
+                .map((kind) => html`<option value="${kind}"></option>`),
+        );
+
+        const nodes: Node[] = [datalist];
+
+        const suggestions = this.groups
+            .suggest_kinds(group)
+            .filter((kind) => kind != group.kind);
+        if (suggestions.length) {
+            nodes.push(
+                html`<div class="chips">
+                    <span>Suggested:</span>
+                    ${suggestions.map(
+                        (kind) =>
+                            html`<button
+                                type="button"
+                                name="kind"
+                                value="${kind}"
+                                title="Use this kind">
+                                ${kind}
+                            </button>`,
+                    )}
+                </div>`,
+            );
+        }
+
+        if (group.kind && !this.groups.is_known_kind(group.kind)) {
+            const warning = `⚠ "${group.kind}" isn't a known kind, is it a typo?`;
+            nodes.push(html`<p class="warning">${warning}</p>`);
+        }
+
+        return nodes;
     }
 
     #group_link(group: SymbolGroup) {

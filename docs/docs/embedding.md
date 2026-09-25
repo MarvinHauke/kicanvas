@@ -179,6 +179,7 @@ The JSON format, version 1:
     "source": "analysis",
     "reviewed": false,
     "selected": "inverting_amp#1",
+    "kinds": ["inverting_amp", "voltage_divider", "schmitt_trigger"],
     "groups": [
         {
             "id": "inverting_amp#1",
@@ -202,23 +203,24 @@ The JSON format, version 1:
 }
 ```
 
-| Field                  | Required | Meaning                                                                               |
-| ---------------------- | -------- | ------------------------------------------------------------------------------------- |
-| `version`              | yes      | Always `1`.                                                                           |
-| `title`, `source`      |          | Shown at the top of the panel. `title` also names the exported file.                  |
-| `reviewed`             |          | Whether the groups have been reviewed.                                                |
-| `selected`             |          | The id of the group selected when the viewer loads.                                   |
-| `groups[].id`          | yes      | A unique id.                                                                          |
-| `groups[].refs`        | yes      | The references of the symbols, as a list or a string, like in `<kicanvas-highlight>`. |
-| `groups[].label`       |          | The name shown, defaults to `id`.                                                     |
-| `groups[].kind`        |          | Groups of the same kind get the same color and are listed together.                   |
-| `groups[].status`      |          | `"ambiguous"` draws a dashed outline and a `?` in the list.                           |
-| `groups[].parent`      |          | The id of the group this one is part of. It's listed under its parent.                |
-| `groups[].description` |          | A string or a list of strings, shown in the details.                                  |
-| `groups[].color`       |          | A CSS color that overrides the kind's color.                                          |
-| `groups[].review`      |          | `"correct"` or `"wrong"`, set by reviewing.                                           |
-| `groups[].added`       |          | `true` for groups a reviewer added, such as subcircuits an analysis missed.           |
-| `parts`                |          | The kind and value of each symbol by reference, shown in the details.                 |
+| Field                  | Required | Meaning                                                                                             |
+| ---------------------- | -------- | --------------------------------------------------------------------------------------------------- |
+| `version`              | yes      | Always `1`.                                                                                         |
+| `title`, `source`      |          | Shown at the top of the panel. `title` also names the exported file.                                |
+| `reviewed`             |          | Whether the groups have been reviewed.                                                              |
+| `selected`             |          | The id of the group selected when the viewer loads.                                                 |
+| `kinds`                |          | All known group kinds, offered when typing the kind of a new group. Other kinds get a typo warning. |
+| `groups[].id`          | yes      | A unique id.                                                                                        |
+| `groups[].refs`        | yes      | The references of the symbols, as a list or a string, like in `<kicanvas-highlight>`.               |
+| `groups[].label`       |          | The name shown, defaults to `id`.                                                                   |
+| `groups[].kind`        |          | Groups of the same kind get the same color and are listed together.                                 |
+| `groups[].status`      |          | `"ambiguous"` draws a dashed outline and a `?` in the list.                                         |
+| `groups[].parent`      |          | The id of the group this one is part of. It's listed under its parent.                              |
+| `groups[].description` |          | A string or a list of strings, shown in the details.                                                |
+| `groups[].color`       |          | A CSS color that overrides the kind's color.                                                        |
+| `groups[].review`      |          | `"correct"` or `"wrong"`, set by reviewing.                                                         |
+| `groups[].added`       |          | `true` for groups a reviewer added, such as subcircuits an analysis missed.                         |
+| `parts`                |          | The kind and value of each symbol by reference, shown in the details.                               |
 
 Unknown fields are ignored, and kept when the reviews are exported.
 
@@ -231,7 +233,9 @@ The **Subcircuits** panel shows:
 
 **Reviewing:** mark the selected group with **✓ Correct** or **✗ Wrong**. Selecting the same button again clears the review. The download button in the panel title exports the groups as `<title>.groups.json`. The file is the loaded JSON with only the `review` of each group changed, and `reviewed` is set to `true` once every group has a review. The browser asks before you leave the page with reviews that weren't exported.
 
-**Adding groups:** for a subcircuit that's missing from the list, select one of its symbols and press `o` or the **+** button in the panel title. This creates a group named `new#1`, `new#2` and so on, marked as correct. Type its kind in the details, then Shift-click (or Ctrl/Cmd-click) more symbols in the schematic to add them. Shift-clicking a symbol that's already in the group removes it. You can switch sheets while doing this, so a group can span sheets. For a group that's only partly right, mark it wrong and press `c` to make an editable copy to fix. Only groups created this way can be edited or deleted; loaded groups can only be reviewed. The export adds the new groups at the end, with `id`, `refs`, `kind`, `review` and `added: true`. Groups without symbols are left out.
+**Adding groups:** for a subcircuit that's missing from the list, select one of its symbols and press `o` or the **+** button in the panel title. This creates a group named `new#1`, `new#2` and so on, marked as correct. Type its kind in the details (the field suggests known kinds, and `Tab` completes the best match), then Shift-click (or Ctrl/Cmd-click) more symbols in the schematic to add them. Shift-clicking a symbol that's already in the group removes it. You can switch sheets while doing this, so a group can span sheets. For a group that's only partly right, mark it wrong and press `c` to make an editable copy to fix. Only groups created this way can be edited or deleted; loaded groups can only be reviewed. The export adds the new groups at the end, with `id`, `refs`, `kind`, `review` and `added: true`. Groups without symbols are left out.
+
+**Kind suggestions:** while you add symbols to a new group, the details suggest kinds whose groups have the most similar parts. For example, two resistors suggest `voltage_divider`. The part kinds come from `parts`, or the reference prefix (`R`, `C`, `U`) if a part isn't listed. Click a suggestion to use it. If the document has a `kinds` list, a kind that isn't in it is shown with a warning, since it's likely a typo.
 
 **Evaluation:** press `e` or the chart button in the panel title to see how well the tool that found the groups did, counted from the reviews. For each kind, a table shows the groups reviewed correct (true positives) and wrong (false positives), the groups added by a reviewer and marked correct (missed, false negatives), the groups not reviewed yet, and precision and recall. The panel shows the totals next to the review progress. Only top-level groups are counted, since nested groups are covered by their parent. Recall is only final once every group is reviewed and the missing ones are added. The table updates while you review.
 

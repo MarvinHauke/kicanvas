@@ -29,6 +29,7 @@ const log = new Logger("kicanvas:groups");
  *    "source": "analysis",             // optional, free text
  *    "reviewed": false,                // optional
  *    "selected": "inverting_amp#1",    // optional, group selected at load
+ *    "kinds": ["inverting_amp", ...],  // optional, all known group kinds
  *    "groups": [{
  *      "id": "inverting_amp#1",        // required, unique
  *      "refs": ["R42", "R43", "U1.A"], // required, REF or REF.UNIT (A = 1)
@@ -97,6 +98,25 @@ export interface EvaluationRow {
     open: number;
 }
 
+/**
+ * Weighted Jaccard similarity of two multisets: the sum of the smaller
+ * counts over the sum of the larger ones, from 0 (nothing in common) to 1.
+ */
+export function multiset_similarity(
+    a: Map<string, number>,
+    b: Map<string, number>,
+): number {
+    let min = 0;
+    let max = 0;
+    for (const key of new Set([...a.keys(), ...b.keys()])) {
+        const x = a.get(key) ?? 0;
+        const y = b.get(key) ?? 0;
+        min += Math.min(x, y);
+        max += Math.max(x, y);
+    }
+    return max ? min / max : 0;
+}
+
 /** tp / (tp + fp), or undefined if nothing was reviewed. */
 export function precision(row: EvaluationRow): number | undefined {
     return row.tp + row.fp ? row.tp / (row.tp + row.fp) : undefined;
@@ -125,6 +145,8 @@ export class SymbolGroupSet extends EventTarget {
     reviewed?: boolean;
     groups: SymbolGroup[] = [];
     parts: Map<string, PartInfo> = new Map();
+    /** The known group kinds from "kinds", if the document has them. */
+    vocabulary?: string[];
 
     #by_id: Map<string, SymbolGroup> = new Map();
     #selected?: string;
@@ -164,6 +186,11 @@ export class SymbolGroupSet extends EventTarget {
                 ? data["reviewed"]
                 : undefined;
         const selected = opt_string(data["selected"]);
+        if (Array.isArray(data["kinds"])) {
+            set.vocabulary = data["kinds"].filter(
+                (k): k is string => typeof k === "string" && k != "",
+            );
+        }
 
         for (const [index, item] of data["groups"].entries()) {
             const group = parse_group(item, index);
@@ -446,6 +473,72 @@ export class SymbolGroupSet extends EventTarget {
      * parts. Parts are looked up by the reference as written ("U1.A") and
      * then by the symbol's reference ("U1").
      */
+    /**
+     * The kinds of the vocabulary and of the loaded groups, sorted. Kinds
+     * typed for created groups are left out, so typos don't spread.
+     */
+    known_kinds(): string[] {
+        const kinds = new Set(this.vocabulary);
+        for (const group of this.groups) {
+            if (group.kind && !this.#created.has(group.id)) {
+                kinds.add(group.kind);
+            }
+        }
+        return [...kinds].sort();
+    }
+
+    /**
+     * False if the document has a vocabulary and the kind isn't in it,
+     * which likely is a typo.
+     */
+    is_known_kind(kind: string): boolean {
+        return !this.vocabulary || this.vocabulary.includes(kind);
+    }
+
+    /**
+     * Suggests kinds for a group, best first: the kinds of the other groups
+     * whose parts are most alike, by the kinds of their parts ("resistor",
+     * "opamp", ...). Parts without a kind in parts count by their
+     * reference prefix ("R", "U"). Only kinds with some parts in common are
+     * suggested.
+     */
+    suggest_kinds(group: SymbolGroup, count = 3): string[] {
+        const profile = this.#part_profile(group);
+        if (!profile.size) {
+            return [];
+        }
+
+        const scores = new Map<string, number>();
+        for (const other of this.groups) {
+            if (other === group || !other.kind || this.#created.has(other.id)) {
+                continue;
+            }
+            const score = multiset_similarity(
+                profile,
+                this.#part_profile(other),
+            );
+            if (score > (scores.get(other.kind) ?? 0)) {
+                scores.set(other.kind, score);
+            }
+        }
+
+        return [...scores.entries()]
+            .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+            .slice(0, count)
+            .map(([kind]) => kind);
+    }
+
+    /** How many parts of each part kind a group has. */
+    #part_profile(group: SymbolGroup): Map<string, number> {
+        const profile = new Map<string, number>();
+        for (const part of this.parts_of(group)) {
+            const kind =
+                part.kind ?? part.query.ref.replace(/[^A-Za-z]+.*$/, "");
+            profile.set(kind, (profile.get(kind) ?? 0) + 1);
+        }
+        return profile;
+    }
+
     parts_of(group: SymbolGroup): GroupPart[] {
         return group.refs.map((query) => {
             const info =

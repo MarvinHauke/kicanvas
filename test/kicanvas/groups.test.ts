@@ -8,6 +8,7 @@ import { assert } from "chai";
 
 import {
     SymbolGroupSet,
+    multiset_similarity,
     precision,
     recall,
     step_id,
@@ -484,6 +485,71 @@ suite("kicanvas.groups", function () {
         const json = set.to_json() as any;
         assert.isTrue(json.groups.find((g: any) => g.id == "g1").added);
         assert.isTrue(json.groups.find((g: any) => g.id == "new#1").added);
+    });
+
+    test("kind suggestions", function () {
+        const set = SymbolGroupSet.parse({
+            version: 1,
+            kinds: ["voltage_divider", "inverting_amp", "schmitt_trigger"],
+            groups: [
+                { id: "d1", refs: ["R1", "R2"], kind: "voltage_divider" },
+                { id: "a1", refs: ["R3", "R4", "U1.A"], kind: "inverting_amp" },
+                { id: "c1", refs: ["C1"], kind: "decoupling_cap" },
+            ],
+            parts: {
+                R1: { kind: "resistor" },
+                R2: { kind: "resistor" },
+                R3: { kind: "resistor" },
+                R4: { kind: "resistor" },
+                R5: { kind: "resistor" },
+                R6: { kind: "resistor" },
+                U1: { kind: "opamp" },
+                U2: { kind: "opamp" },
+                C1: { kind: "capacitor" },
+            },
+        });
+
+        assert.deepEqual(set.known_kinds(), [
+            "decoupling_cap",
+            "inverting_amp",
+            "schmitt_trigger",
+            "voltage_divider",
+        ]);
+        assert.isTrue(set.is_known_kind("inverting_amp"));
+        assert.isFalse(set.is_known_kind("volt_divider"));
+        assert.isTrue(new SymbolGroupSet().is_known_kind("anything"));
+
+        const group = set.create_group(parse_refs("R5 R6"));
+        assert.deepEqual(set.suggest_kinds(group), [
+            "voltage_divider",
+            "inverting_amp",
+        ]);
+
+        set.set_refs(group.id, parse_refs("R5 R6 U2.B"));
+        assert.deepEqual(set.suggest_kinds(group)[0], "inverting_amp");
+
+        // Parts without a kind count by their reference prefix.
+        set.set_refs(group.id, parse_refs("C7"));
+        assert.deepEqual(set.suggest_kinds(group), []);
+        set.parts.delete("C1");
+        assert.deepEqual(set.suggest_kinds(group), ["decoupling_cap"]);
+
+        assert.deepEqual(set.suggest_kinds(set.create_group()), []);
+
+        // Kinds typed for created groups aren't offered.
+        set.set_kind(group.id, "volt_divider");
+        assert.notInclude(set.known_kinds(), "volt_divider");
+    });
+
+    test("multiset_similarity", function () {
+        const m = (o: Record<string, number>) => new Map(Object.entries(o));
+        assert.equal(multiset_similarity(m({ r: 2 }), m({ r: 2 })), 1);
+        assert.equal(
+            multiset_similarity(m({ r: 2 }), m({ r: 2, u: 1 })),
+            2 / 3,
+        );
+        assert.equal(multiset_similarity(m({ r: 1 }), m({ c: 1 })), 0);
+        assert.equal(multiset_similarity(m({}), m({})), 0);
     });
 
     test("add", function () {

@@ -607,7 +607,7 @@ export class SymbolGroupSet extends EventTarget {
         const group: SymbolGroup = {
             id,
             refs: [...refs],
-            label: id,
+            label: created_label(id, kind),
             kind,
             review: "correct",
             added: true,
@@ -668,6 +668,7 @@ export class SymbolGroupSet extends EventTarget {
         const group = this.#editable(id);
         if (group && group.kind !== (kind || undefined)) {
             group.kind = kind || undefined;
+            group.label = created_label(id, group.kind);
             this.#changed(group);
         }
     }
@@ -789,11 +790,16 @@ function parse_review(value: unknown, id: string): Review | undefined {
     return undefined;
 }
 
+/** The name of a created group, such as "new#1 voltage_divider". */
+function created_label(id: string, kind: string | undefined) {
+    return kind ? `${id} ${kind}` : id;
+}
+
+/** A created group as a v1 group. Its name follows from id and kind. */
 function group_to_json(group: SymbolGroup): Record<string, unknown> {
     return omit_undefined({
         id: group.id,
         refs: group.refs.map((r) => r.text),
-        label: group.label == group.id ? undefined : group.label,
         kind: group.kind,
         status: group.status,
         parent: group.parent,

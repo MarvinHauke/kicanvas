@@ -76,7 +76,8 @@ const shortcuts = [
 type Shortcut = (typeof shortcuts)[number][0];
 
 /** Shown in the details of groups that can be edited. */
-const edit_hint = "Shift-click symbols to add or remove them.";
+const edit_hint =
+    "Shift-click symbols to add or remove them. The first click into the schematic only activates it.";
 
 /** Explains how the evaluation sheet counts. */
 const evaluation_note =

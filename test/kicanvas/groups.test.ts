@@ -389,9 +389,14 @@ suite("kicanvas.groups", function () {
         );
         assert.deepEqual(group.missing, ["R999"]);
 
+        assert.equal(group.label, "new#1 amp");
         set.set_kind("new#1", "buffer");
         set.set_kind("new#1", "buffer"); // unchanged, no event
         assert.equal(group.kind, "buffer");
+        assert.equal(group.label, "new#1 buffer");
+        set.set_kind("new#1", "");
+        assert.equal(group.label, "new#1");
+        set.set_kind("new#1", "buffer");
 
         // Loaded groups can't be edited or removed.
         set.set_refs("amp#1", []);
@@ -420,6 +425,8 @@ suite("kicanvas.groups", function () {
             "new#1",
             "new#1",
             "new#1",
+            "new#1",
+            "new#1",
             "new#2",
             null,
         ]);
@@ -427,8 +434,9 @@ suite("kicanvas.groups", function () {
 
     test("to_json with created groups", function () {
         const set = SymbolGroupSet.parse(example);
-        set.create_group(parse_refs("R5 U3.A"), "buffer");
+        const group = set.create_group(parse_refs("R5 U3.A"), "buffer");
         set.create_group(); // no symbols, left out
+        assert.equal(group.label, "new#1 buffer");
 
         const json = set.to_json() as any;
         assert.equal(json.groups.length, example.groups.length + 1);
